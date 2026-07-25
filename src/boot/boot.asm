@@ -1,3 +1,6 @@
+; SPDX-License-Identifier: LGPL-2.1
+; boot.asm - 32-bit Multiboot bootstrap
+
 section .multiboot
 align 4
         dd 0x1BADB002
@@ -7,60 +10,55 @@ align 4
 section .data
 align 16
 
+; GDT
 gdt_start:
         dq 0x0
-
-        gdt_kernel_code:
-                dw 0xFFFF
-                dw 0x0
-                db 0x0
-                db 0b10011010
-                db 0b11001111
-                db 0x0
-
-        gdt_kernel_data:
-                dw 0xFFFF
-                dw 0x0
-                db 0x0
-                db 0b10010010
-                db 0b11001111
-                db 0x0
-
-        gdt_user_code:
-                dw 0xFFFF
-                dw 0x0
-                db 0x0
-                db 0b11111010
-                db 0b11001111
-                db 0x0
-
-        gdt_user_data:
-                dw 0xFFFF
-                dw 0x0
-                db 0x0
-                db 0b11110010
-                db 0b11001111
-                db 0x0
-
-        gdt_tss:
-                dw 0x0068
-                dw 0x0
-                db 0x0
-                db 0b10001001
-                db 0b00000000
-                db 0x0
-
+gdt_kernel_code:
+        dw 0xFFFF
+        dw 0x0
+        db 0x0
+        db 0b10011010
+        db 0b11001111
+        db 0x0
+gdt_kernel_data:
+        dw 0xFFFF
+        dw 0x0
+        db 0x0
+        db 0b10010010
+        db 0b11001111
+        db 0x0
+gdt_user_code:
+        dw 0xFFFF
+        dw 0x0
+        db 0x0
+        db 0b11111010
+        db 0b11001111
+        db 0x0
+gdt_user_data:
+        dw 0xFFFF
+        dw 0x0
+        db 0x0
+        db 0b11110010
+        db 0b11001111
+        db 0x0
+gdt_tss:
+        dw 104
+        dw 0x0
+        db 0x0
+        db 0b10001001
+        db 0b00000000
+        db 0x0
 gdt_end:
 
 gdt_descriptor:
         dw gdt_end - gdt_start - 1
         dd gdt_start
 
-CODE_SEG equ (gdt_kernel_code - gdt_start)
-DATA_SEG equ (gdt_kernel_data - gdt_start)
-USER_CODE_SEG equ (gdt_user_code - gdt_start)
-USER_DATA_SEG equ (gdt_user_data - gdt_start)
-TSS_SEG equ (gdt_tss - gdt_start)
+CODE_SEG       equ gdt_kernel_code - gdt_start
+DATA_SEG       equ gdt_kernel_data - gdt_start
+USER_CODE_SEG  equ gdt_user_code - gdt_start
+USER_DATA_SEG  equ gdt_user_data - gdt_start
+TSS_SEG        equ gdt_tss - gdt_start
 
 idt_start:
         times 256 dq 0x0
@@ -78,22 +76,9 @@ tss:
         dd 0x90000
         dd 0x10
         times 5 dd 0
-        dd 0
-        dd 0
-        dd 0
-        dd 0
-        dd 0
-        dd 0
-        dd 0
-        dd 0
-        dd 0
-        dd 0
-        dd 0
-        dd 0
-        dd 0
-        dd 0
-        dd 0
-        dd 0
+        times 15 dd 0
+        dw 0
+        dw 0
 
 section .text
 global start
@@ -117,6 +102,7 @@ start:
         lidt [idt_descriptor]
         cli
 
+        ; ebx contains multiboot info pointer – reserved for future
         call kernel_main
 
         cli

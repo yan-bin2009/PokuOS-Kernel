@@ -1,48 +1,24 @@
 #include <driver/keybord.h>
 #include <kernel/ports.h>
 
-#define VGA_ADDR 0xB8000
-#define COLS 80
-#define ROWS 25
 #define BUFFER_SIZE 256
-
-volatile unsigned short *vga = (volatile unsigned short*)VGA_ADDR;
-int cursor = 0;
+#define KEY_RELEASE 0xF0
 
 static volatile char key_buffer[BUFFER_SIZE];
 static volatile int head = 0;
 static volatile int tail = 0;
 
-static int key_down[128] = {0};
-static int is_break = 0;
+static volatile int key_state[128] = {0};
 
-static unsigned char scancode_to_ascii[128] = {
-        0, 27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 8,
-        9, 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
-        0, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`',
-        0, '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0,
-        '*', 0, ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '-', 0, 0, 0, '+',
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+static const unsigned char scancode_to_ascii[128] = {
+        0, 27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
+        '-', '=', 8, 9, 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i',
+        'o', 'p', '[', ']', '\n', 0, 'a', 's', 'd', 'f', 'g',
+        'h', 'j', 'k', 'l', ';', '\'', '`', 0, '\\', 'z', 'x',
+        'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0, '*', 0, ' ',
 };
 
-static void putchar(char c) {
-        if (c == '\b') {
-                if (cursor > 0) {
-                        cursor--;
-                        vga[cursor] = (0x0F << 8) | ' ';
-                }
-                return;
-        }
-        if (c == '\n') {
-                int row = cursor / COLS;
-                cursor = (row + 1) * COLS;
-                if (cursor >= ROWS * COLS) cursor = 0;
-                return;
-        }
-        if (cursor >= ROWS * COLS) cursor = 0;
-        vga[cursor++] = (0x0F << 8) | c;
-}
+static const char shift_symbols[] = ")!@#$%^&*(";
 
 static void push_to_buffer(char c) {
         int next = (head + 1) % BUFFER_SIZE;
@@ -52,62 +28,59 @@ static void push_to_buffer(char c) {
         }
 }
 
-char getchar() {
+char getchar(void) {
         if (tail == head) return 0;
         char c = key_buffer[tail];
         tail = (tail + 1) % BUFFER_SIZE;
         return c;
 }
 
-void __attribute__((interrupt)) keybord_handler(void* frame) {
+void __attribute__((interrupt)) keybord_handler(void *frame) {
         unsigned char scancode = inb(0x60);
+        static int break_pending = 0;
 
-        if (scancode == 0xF0) {
-                is_break = 1;
-                outb(0xA0, 0x20);
+        if (scancode == KEY_RELEASE) {
+                break_pending = 1;
                 outb(0x20, 0x20);
                 return;
         }
 
-        if (is_break) {
-                if (scancode < 128) key_down[scancode] = 0;
-                is_break = 0;
-                outb(0xA0, 0x20);
+        if (break_pending) {
+                if (scancode < 128) key_state[scancode] = 0;
+                break_pending = 0;
                 outb(0x20, 0x20);
                 return;
         }
 
         if (scancode >= 128) {
-                outb(0xA0, 0x20);
                 outb(0x20, 0x20);
                 return;
         }
 
-        key_down[scancode] = 1;
+        key_state[scancode] = 1;
 
         if (scancode == 0x2A || scancode == 0x36) {
-                outb(0xA0, 0x20);
                 outb(0x20, 0x20);
                 return;
         }
 
         char c = scancode_to_ascii[scancode];
         if (c) {
-                if (key_down[0x2A] || key_down[0x36]) {
-                        if (c >= 'a' && c <= 'z') c -= 32;
-                        else if (c >= '1' && c <= '9') {
-                                char shift_map[] = ")!@#$%^&*(";
-                                if (c >= '1' && c <= '9') c = shift_map[c - '1'];
-                        }
+                int shift = key_state[0x2A] || key_state[0x36];
+                if (shift && c >= 'a' && c <= 'z') {
+                        c -= 32;
+                } else if (shift && c >= '1' && c <= '9') {
+                        c = shift_symbols[c - '1'];
+                } else if (shift && c == '0') {
+                        c = ')';
                 }
                 push_to_buffer(c);
         }
 
-        outb(0xA0, 0x20);
         outb(0x20, 0x20);
 }
 
-void keybord_init() {
+void keybord_init(void) {
         outb(0x20, 0x11);
         outb(0xA0, 0x11);
         outb(0x21, 0x20);

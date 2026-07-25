@@ -12,6 +12,8 @@ void kernel_main() {
         keybord_init();
         syscall_init();
 
+        // serial_write("Kernel start\n");   // 暂时注释
+
         __asm__ volatile ("sti");
 
         init_start();

@@ -4,7 +4,7 @@ set -e
 mkdir -p bin
 
 nasm -f elf32 boot/boot.asm -o bin/boot.o
-nasm -f elf32 kernel/task.asm -o bin/task.o
+nasm -f elf32 kernel/task.asm -o bin/switch_to.o
 nasm -f elf32 kernel/user.asm -o bin/user.o
 nasm -f elf32 kernel/user_prog.asm -o bin/user_prog.o
 
