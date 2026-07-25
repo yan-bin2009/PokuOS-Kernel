@@ -23,7 +23,8 @@
 ```bash
 cd src
 ./build.sh
-``
+
+```
 ##体验
 启动后你将看到：
 
@@ -63,7 +64,7 @@ mov ebx, 1          ; stdout
 mov ecx, msg
 mov edx, 22
 int 0x80
-``
+```
 ##许可证
 
 GNU Lesser General Public License v2.1
@@ -101,4 +102,4 @@ chmod +x build.sh
 所以不要在意
                           --yan-bin2009   2026/7/25
 
-
+```
