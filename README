@@ -10,10 +10,19 @@
  5.环境要求
  x86 架构 Linux（推荐 Arch 因为我就在这个系统上写的）
 `nasm`、`gcc`、`ld`（支持 `-m elf_i386`）
-6.构建
-在src下执行./build.sh
+6.那我怎么构建？
+很简单，我早在src下给你弄好了：
+
+``bash
+cd ~/pokuos/src
+chmod +x build.sh
+./build.sh
+``
+
 7.协议？
- GNU LESSER GENERAL PUBLIC LICENSE
-    Version 2.1, February 1999
-    我仅仅觉得看起来差不多就得了
+ GNU LESSER GENERAL PUBLIC LICENSE，另见于LICENSE文件
+8.补充
+我现在尝试把shell内置里面，或者作为外置软件，内核只需要保持干净就对了。
+以及里面错误的名称：keybord等等，我是懒得改的，我把这些屎一样的代码扔进ai时，他强烈建议我改正。可惜的是我偏偏不改。
+所以不要在意
                           --yan-bin2009   2026/7/25
