@@ -5,14 +5,14 @@ global switch_to
 ; 参数: [esp+4] = prev, [esp+8] = next
 switch_to:
     
-    mov eax, [esp+4]          
-    mov [eax + 4], esp        
-    mov [eax + 8], ebp        
+        mov eax, [esp+4]          
+        mov [eax + 4], esp        
+        mov [eax + 8], ebp        
    
  
-    ; 加载下一个任务 (next)
-    mov edx, [esp+8]          
-    mov esp, [edx + 4]        
-    mov ebp, [edx + 8]        
+        ; 加载下一个任务 (next)
+        mov edx, [esp+8]          
+        mov esp, [edx + 4]        
+        mov ebp, [edx + 8]        
 
-    ret
+        ret
