@@ -2,18 +2,27 @@
 1.创建目的
 我实际上是为了自己能够理解一些操作系统底层原理，包括学习nasm，C语言等等。虽然大多由AI协助。
 2.她目前能干什么？
-很抱歉，什么也干不了。
+很抱歉，什么也干不了。只能吞下你在键盘上打的字
 3.如何启动
  通过 GRUB 或 QEMU 的 `-kernel` 选项加载,执行"qemu-system-i386 -kernel kernel.bin -m 32"
 4.目前特征
- 保护模式下的段管理和中断处理，支持键盘输入，但是很抱歉，我没有详细测试。
+ 保护模式下的段管理和中断处理，支持键盘输入，包括backpace,换行等等。
  5.环境要求
  x86 架构 Linux（推荐 Arch 因为我就在这个系统上写的）
 `nasm`、`gcc`、`ld`（支持 `-m elf_i386`）
-6.构建
-在src下执行./build.sh
-7.协议？
- GNU LESSER GENERAL PUBLIC LICENSE
-    Version 2.1, February 1999
-    我仅仅觉得看起来差不多就得了
+6.那我怎么构建？
+很简单，我早在src下给你弄好了：
 
+``bash
+cd ~/pokuos/src
+chmod +x build.sh
+./build.sh
+``
+
+7.协议？
+ GNU LESSER GENERAL PUBLIC LICENSE，另见于LICENSE文件
+8.补充
+我现在尝试把shell内置里面，或者作为外置软件，内核只需要保持干净就对了。
+以及里面错误的名称：keybord等等，我是懒得改的，我把这些屎一样的代码扔进ai时，他强烈建议我改正。可惜的是我偏偏不改。
+所以不要在意
+                          --yan-bin2009   2026/7/25
