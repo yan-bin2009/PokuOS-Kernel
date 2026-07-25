@@ -14,3 +14,15 @@
 - 修复了已知漏洞
 - 光标错位问题解决
 - 优化了代码可维护性，可扩展性
+- 任务调度器完善：
+- create_task 真正实现，支持最多 16 个任务
+- 使用静态数组分配任务，无需动态内存
+- switch_to 保存/恢复完整上下文（ebp/ebx/esi/edi）
+- 系统调用改进
+- sys_write 返回写入字节数
+- 显式保存/恢复调用者寄存器（ebx/ecx/edx）
+- 添加用户态指针校验，防止非法访问
+- 用宏替代硬编码向量号（IRQ1_VECTOR、SYSCALL_VECTOR）
+- 用宏替代门类型标志（GATE_INTERRUPT、GATE_USER）
+- PIC 初始化使用宏替代魔法数字
+
