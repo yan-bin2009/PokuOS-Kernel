@@ -1,8 +1,9 @@
-#PokuOS - 暂时的名称
+#####PokuOS - 暂时的名称
 
 首先这是个学习项目，并非正式项目
 
-##当前状态
+###当前状态
+```text
 - [x] 分页（恒等映射前 4MB）
 - [x] GDT / IDT 中断管理
 - [x] PS/2 键盘驱动（支持 Shift、退格、回车）
@@ -12,6 +13,7 @@
 - [x] 交互式 Shell（`help` / `clear` / `reboot`）
 - [ ] 真正的进程管理（`fork` / `exec` 待实现）
 - [ ] 内存管理（`kmalloc` 待实现）
+```
 ### 环境要求
 
 - x86_64 Linux（推荐 Arch 此项目开发者的系统用的这个）
@@ -25,19 +27,20 @@ cd src
 ./build.sh
 
 ```
-##体验
-启动后你将看到：
+###体验
 
+启动后你将看到：
+```bash
 
 === PokuOS Init System ===
 Type 'help' for commands.
 >
-
+```
 输入help可以查看目前支持命令
 
 ##项目结构
 
-
+```text
 src/
 ├── boot/          # 引导程序（Multiboot + GDT/IDT）
 ├── kernel/        # 内核核心（中断、分页、系统调用、任务）
@@ -47,17 +50,19 @@ src/
 ├── linker.ld      # 链接脚本
 └── build.sh       # 编译脚本
 
-##系统调用
+```
+###系统调用
 
 当前支持的系统调用：
+```text
 调用号	名称	参数
 -----------------------------
 1	sys_exit	无
 -----------------------------
 4	sys_write	fd, buf, len
 -----------------------------
-
-相关代码
+```
+###相关代码
 ```nasm
 mov eax, 4          ; sys_write
 mov ebx, 1          ; stdout
@@ -65,7 +70,7 @@ mov ecx, msg
 mov edx, 22
 int 0x80
 ```
-##许可证
+###许可证
 
 GNU Lesser General Public License v2.1
 
