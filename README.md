@@ -1,8 +1,8 @@
-#####PokuOS - 暂时的名称
+##### PokuOS - 暂时的名称
 
 首先这是个学习项目，并非正式项目
 
-###当前状态
+### 当前状态
 ```text
 - [x] 分页（恒等映射前 4MB）
 - [x] GDT / IDT 中断管理
@@ -20,14 +20,14 @@
 - base-devel （支持 `-m elf_i386`）
 - `qemu-system-i386`（可选，用于测试）
 
-### 编译
+### 如何编译
 
 ```bash
 cd src
 ./build.sh
 
 ```
-###体验
+## 体验
 
 启动后你将看到：
 ```bash
@@ -38,7 +38,7 @@ Type 'help' for commands.
 ```
 输入help可以查看目前支持命令
 
-##项目结构
+## 项目结构
 
 ```text
 src/
@@ -51,7 +51,7 @@ src/
 └── build.sh       # 编译脚本
 
 ```
-###系统调用
+## 系统调用
 
 当前支持的系统调用：
 ```text
@@ -62,7 +62,7 @@ src/
 4	sys_write	fd, buf, len
 -----------------------------
 ```
-###相关代码
+# 相关代码
 ```nasm
 mov eax, 4          ; sys_write
 mov ebx, 1          ; stdout
@@ -70,7 +70,7 @@ mov ecx, msg
 mov edx, 22
 int 0x80
 ```
-###许可证
+### 许可证
 
 GNU Lesser General Public License v2.1
 
