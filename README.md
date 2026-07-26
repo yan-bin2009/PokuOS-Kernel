@@ -1,4 +1,4 @@
-##### PokuOS - 暂时的名称
+# PokuOS-Kernel --- 小型项目
 
 首先这是个学习项目，并非正式项目
 
@@ -10,14 +10,14 @@
 - [x] VGA 文本模式显示（清屏、滚动）
 - [x] 系统调用（`int 0x80`，支持 `sys_write` / `sys_exit`）
 - [x] 用户态切换框架（`iret` 切换至 Ring 3）
-- [x] 交互式 Shell（`help` / `clear` / `reboot`）
+- [x] 交互式 Shell
 - [ ] 真正的进程管理（`fork` / `exec` 待实现）
-- [ ] 内存管理（`kmalloc` 待实现）
+- [ ] 内存管理
 ```
 ### 环境要求
 
-- x86_64 Linux（推荐 Arch 此项目开发者的系统用的这个）
-- base-devel （支持 `-m elf_i386`）
+- 在x86_64 Linux机器上，开一个32位虚拟机（推荐 Arch 此项目开发者的系统用的这个）
+- base-devel qemu-full （支持 `-m elf_i386`）
 - `qemu-system-i386`（可选，用于测试）
 
 ### 如何编译
@@ -41,14 +41,21 @@ Type 'help' for commands.
 ## 项目结构
 
 ```text
-src/
-├── boot/          # 引导程序（Multiboot + GDT/IDT）
-├── kernel/        # 内核核心（中断、分页、系统调用、任务）
-├── driver/        # 驱动（键盘、VGA）
-├── init/          # 初始化（命令行 Shell）
-├── include/       # 公共头文件
-├── linker.ld      # 链接脚本
-└── build.sh       # 编译脚本
+pokuos/
+├── src/
+│   ├── boot/         引导程序
+│   ├── kernel/       中断/调度/系统调用
+│   ├── driver/       键盘/VGA
+│   ├── init/         内核启动加载器
+│   ├── mm/           kmalloc 堆分配器
+│   ├── fs/           文件系统（待开发）
+│   ├── tools/        工具函数（待开发）
+│   ├── include/      公共头文件
+│   └── build.sh
+├── usr/              用户态程序
+│   └── shell/        Shell（待开发）
+├── README.md
+└── CHANGELOG.md
 
 ```
 ## 系统调用
@@ -76,7 +83,7 @@ GNU Lesser General Public License v2.1
 
 ```text
 
-原版说明文档如下：
+第一版说明文档如下：
 
 这是一个比较简陋的玩具内核，目前测试，能在32 位 x86 机器上操作，能够在QEMU中引导，响应键盘中断（由于缺少shell,导致你输入的东西是无法返回相应的指令）并在屏幕上回显文字
 1.创建目的
