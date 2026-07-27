@@ -4,21 +4,13 @@
 
 ### 当前状态
 ```text
-- [x] 分页（恒等映射前 4MB）
-- [x] GDT / IDT 中断管理
-- [x] PS/2 键盘驱动（支持 Shift、退格、回车）
-- [x] VGA 文本模式显示（清屏、滚动）
-- [x] 系统调用（`int 0x80`，支持 `sys_write` / `sys_exit`）
-- [x] 用户态切换框架（`iret` 切换至 Ring 3）
-- [x] 交互式 Shell
-- [ ] 真正的进程管理（`fork` / `exec` 待实现）
-- [ ] 内存管理
+开发者正在积极维护该项目
 ```
 ### 环境要求
 
-- 在x86_64 Linux机器上，开一个32位虚拟机（推荐 Arch 此项目开发者的系统用的这个）
-- base-devel qemu-full （支持 `-m elf_i386`）
-- `qemu-system-i386`（可选，用于测试）
+- 32位虚拟机
+- 宿主机：base-devel qemu-full （支持 `-m elf_i386`）
+
 
 ### 如何编译
 
@@ -46,37 +38,16 @@ pokuos/
 │   ├── boot/         引导程序
 │   ├── kernel/       中断/调度/系统调用
 │   ├── driver/       键盘/VGA
-│   ├── init/         内核启动加载器
-│   ├── mm/           kmalloc 堆分配器
-│   ├── fs/           文件系统（待开发）
-│   ├── tools/        工具函数（待开发）
+│   ├── init/         内核启动加载
 │   ├── include/      公共头文件
 │   └── build.sh
-├── usr/              用户态程序
-│   └── shell/        Shell（待开发）
 ├── README.md
 └── CHANGELOG.md
 
 ```
-## 系统调用
 
-当前支持的系统调用：
-```text
-调用号	名称	参数
------------------------------
-1	sys_exit	无
------------------------------
-4	sys_write	fd, buf, len
------------------------------
-```
 # 相关代码
-```nasm
-mov eax, 4          ; sys_write
-mov ebx, 1          ; stdout
-mov ecx, msg
-mov edx, 22
-int 0x80
-```
+
 ### 许可证
 
 GNU Lesser General Public License v2.1
