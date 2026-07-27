@@ -84,35 +84,33 @@ void free_page_frame(uint32_t phys_addr)
  */
 void map_page(void *virt, void *phys, uint32_t flags)
 {
-	uint32_t vaddr = (uint32_t)virt;
-	uint32_t paddr = (uint32_t)phys;
-	uint32_t pd_idx = vaddr >> 22;
-	uint32_t pt_idx = (vaddr >> 12) & 0x3FF;
-	uint32_t *pd = (uint32_t *)0xFFFFF000;
-	uint32_t *pt;
+        uint32_t vaddr = (uint32_t)virt;
+        uint32_t paddr = (uint32_t)phys;
+        uint32_t pd_idx = vaddr >> 22;
+        uint32_t pt_idx = (vaddr >> 12) & 0x3FF;
+        uint32_t *pd = (uint32_t *)0xFFFFF000;
+        uint32_t *pt;
 
-	/* Check if page table exists */
-	if (!(pd[pd_idx] & PTE_PRESENT)) {
-		uint32_t pt_phys = _alloc_phys_page();
-		if (!pt_phys) {
-			vga_write("[PAGING] map_page: out of phys memory for PT\n");
-			return;
-		}
-		/* Zero the new page table via recursive mapping */
-		uint32_t *pt_virt = (uint32_t *)(0xFFC00000 + (pd_idx << 12));
-		int i;
-		for (i = 0; i < 1024; i++)
-			pt_virt[i] = 0;
+        /* Check if page table exists */
+        if (!(pd[pd_idx] & PTE_PRESENT)) {
+                uint32_t pt_phys = _alloc_phys_page();
+                if (!pt_phys) {
+                        vga_write("[PAGING] map_page: out of phys memory for PT\n");
+                        return;
+                }
+                /* Set PDE with present, RW (and optionally user) */
+                pd[pd_idx] = pt_phys | PTE_PRESENT | PTE_RW;
+                /* Zero the new page table via recursive mapping */
+                uint32_t *pt_virt = (uint32_t *)(0xFFC00000 + (pd_idx << 12));
+                int i;
+                for (i = 0; i < 1024; i++)
+                        pt_virt[i] = 0;
+        }
 
-		/* Set PDE with present, RW (and optionally user) */
-		pd[pd_idx] = pt_phys | PTE_PRESENT | PTE_RW;
-	}
-
-	/* Now set the PTE */
-	pt = (uint32_t *)(0xFFC00000 + (pd_idx << 12));
-	pt[pt_idx] = paddr | (flags & 0xFFF);
+        /* Now set the PTE */
+        pt = (uint32_t *)(0xFFC00000 + (pd_idx << 12));
+        pt[pt_idx] = paddr | (flags & 0xFFF);
 }
-
 /*
  * Unmap a virtual page (clear PTE)
  */
