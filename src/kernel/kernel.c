@@ -3,22 +3,34 @@
 #include <driver/vga.h>
 #include <kernel/paging.h>
 #include <kernel/syscall.h>
+#include <kernel/heap.h>    // 别忘了包含 heap.h
 #include <init/init.h>
 
-void kernel_main() {
-        vga_init();
-        paging_init(0, 0);
-        idt_init();
-        keybord_init();
-        syscall_init();
+void kernel_main(void)
+{
+    unsigned long mem_start = 0x00100000; // 1 MB
+    unsigned long mem_end   = 0x01000000; // 16 MB
 
-        // serial_write("Kernel start\n");   // 暂时注释
+    vga_init();
 
-        __asm__ volatile ("sti");
+    // 初始化分页（必须先于中断和堆）
+    paging_init(mem_start, mem_end);
 
-        init_start();
+    // 初始化堆
+    heap_init();
 
-        while (1) {
-                __asm__ volatile ("hlt");
-        }
+    // 初始化中断、键盘、系统调用
+    idt_init();
+    keybord_init();
+    syscall_init();
+
+    // 开启中断
+    __asm__ volatile ("sti");
+
+    // 启动 init 进程/Shell
+    init_start();
+
+    while (1) {
+        __asm__ volatile ("hlt");
+    }
 }
