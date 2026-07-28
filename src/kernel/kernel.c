@@ -3,16 +3,19 @@
 #include <driver/vga.h>
 #include <kernel/paging.h>
 #include <kernel/syscall.h>
-#include <kernel/heap.h>    //新增heap.h
+#include <kernel/heap.h>    
 #include <init/init.h>
 #include <kernel/vfs.h>
 #include <kernel/initrd.h>
 #include <kernel/multiboot.h>
-
+#include <kernel/sched.h>
 extern struct dentry *vfs_root;
 
 void kernel_main(unsigned int magic, unsigned int addr)
 {
+
+
+
         //测试：显存
         /*char *video = (char*)0xB8000;
         video[0] = 'P';
@@ -33,9 +36,10 @@ void kernel_main(unsigned int magic, unsigned int addr)
 
         paging_init(mem_start, mem_end);
 	heap_init();
-
         vga_init();
-        
+        sched_init();
+        pit_init();
+        __asm__ volatile ("sti");
         /*分页和堆初始化*/
 
         
@@ -65,6 +69,8 @@ void kernel_main(unsigned int magic, unsigned int addr)
         idt_init();
         keybord_init();
         syscall_init();
+
+
 
         // 开启中断
         __asm__ volatile ("sti");

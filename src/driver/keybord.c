@@ -16,6 +16,10 @@ static const unsigned char scancode_to_ascii[128] = {
         'o', 'p', '[', ']', '\n', 0, 'a', 's', 'd', 'f', 'g',
         'h', 'j', 'k', 'l', ';', '\'', '`', 0, '\\', 'z', 'x',
         'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0, '*', 0, ' ',
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 };
 
 static const char shift_symbols[] = ")!@#$%^&*(";
@@ -29,7 +33,8 @@ static void push_to_buffer(char c) {
 }
 
 char getchar(void) {
-        if (tail == head) return 0;
+        if (tail == head)
+                return 0;
         char c = key_buffer[tail];
         tail = (tail + 1) % BUFFER_SIZE;
         return c;
@@ -37,7 +42,20 @@ char getchar(void) {
 
 void __attribute__((interrupt)) keybord_handler(void *frame) {
         unsigned char scancode = inb(0x60);
+        static int extended = 0;
         static int break_pending = 0;
+
+        if (scancode == 0xE0) {
+                extended = 1;
+                outb(0x20, 0x20);
+                return;
+        }
+
+        if (extended) {
+                extended = 0;
+                outb(0x20, 0x20);
+                return;
+        }
 
         if (scancode == KEY_RELEASE) {
                 break_pending = 1;
@@ -46,7 +64,8 @@ void __attribute__((interrupt)) keybord_handler(void *frame) {
         }
 
         if (break_pending) {
-                if (scancode < 128) key_state[scancode] = 0;
+                if (scancode < 128)
+                        key_state[scancode] = 0;
                 break_pending = 0;
                 outb(0x20, 0x20);
                 return;

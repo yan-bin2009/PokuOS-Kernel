@@ -20,7 +20,7 @@ struct idt_ptr idtp;
 extern void keybord_handler();
 extern void syscall_handler(void* frame);
 
-static void idt_set_gate(unsigned char num, unsigned long base, unsigned short sel, unsigned char flags) {
+void idt_set_gate(unsigned char num, unsigned long base, unsigned short sel, unsigned char flags) {
         idt[num].base_low = (base & 0xFFFF);
         idt[num].base_high = (base >> 16) & 0xFFFF;
         idt[num].sel = sel;

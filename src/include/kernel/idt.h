@@ -9,5 +9,5 @@
 #define GATE_USER       0xEE   // 中断门 DPL=3
 
 void idt_init(void);
-
+void idt_set_gate(unsigned char num, unsigned long base, unsigned short sel, unsigned char flags);
 #endif

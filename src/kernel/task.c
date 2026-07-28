@@ -10,57 +10,93 @@ static int task_count = 0;
 static int pid_counter = 1;
 
 static task_t idle_task;
-static task_t* current_task = NULL;
+task_t *current_task = NULL;
 
-extern void switch_to(task_t* prev, task_t* next);
+extern void switch_to(task_t *prev, task_t *next);
 
-task_t* create_task(task_func_t func) {
-        if (task_count >= MAX_TASKS)
-                return NULL;
-
-        task_t* t = &tasks[task_count++];
-        t->pid = pid_counter++;
-        t->next = NULL;
-
-        // 分配内核栈（使用静态数组）
-        unsigned int* stack_top = (unsigned int*)(t->stack + STACK_SIZE / 4);
-        // 压入入口地址，使得 switch_to 后 ret 跳转到 func
-        *(--stack_top) = (unsigned int)func;
-        // 压入虚拟返回地址（不会被使用）
-        *(--stack_top) = 0;
-        // 设置 esp 指向栈顶（注意栈向下增长）
-        t->esp = (unsigned int)stack_top;
-        // 初始 ebp = esp
-        t->ebp = t->esp;
-        // 其它寄存器初始为 0
-        t->ebx = 0;
-        t->esi = 0;
-        t->edi = 0;
-
-        return t;
+/* 任务意外返回的处理 */
+static void task_exit_handler(void)
+{
+	vga_write("[TASK] Task returned unexpectedly. Halting.\n");
+	for (;;)
+		__asm__ volatile ("hlt");
 }
 
-void task_init(void) {
-        // 初始化 idle 任务
-        idle_task.pid = 0;
-        idle_task.esp = 0;
-        idle_task.ebp = 0;
-        idle_task.ebx = 0;
-        idle_task.esi = 0;
-        idle_task.edi = 0;
-        idle_task.next = &idle_task;
+/* 创建新任务（带优先级） */
+task_t *create_task(task_func_t func, int priority)
+{
+	task_t *t;
+	uint32_t *stack_top;
 
-        current_task = &idle_task;
+	if (task_count >= MAX_TASKS)
+		return NULL;
 
-        vga_write("[TASK] Scheduler initialized.\n");
+	t = &tasks[task_count++];
+	t->pid = pid_counter++;
+	t->priority = (priority > 0) ? priority : TASK_PRIO_NORMAL;
+	t->timeslice = TASK_TIMESLICE;
+	t->state = TASK_READY;
+	t->ebx = 0;
+	t->esi = 0;
+	t->edi = 0;
+
+	/* 伪造内核栈 */
+	stack_top = (uint32_t *)(t->stack + STACK_SIZE);
+	*(--stack_top) = (uint32_t)task_exit_handler;
+	*(--stack_top) = (uint32_t)func;
+	t->esp = (uint32_t)stack_top;
+	t->ebp = t->esp;
+
+	/* 插入调度链表（末尾） */
+	if (current_task) {
+		t->next = current_task->next;
+		current_task->next = t;
+	} else {
+		t->next = t;
+	}
+
+	return t;
 }
 
-void yield(void) {
-        if (current_task == NULL || current_task->next == NULL)
-                return;
+/* 调度器初始化 */
+void task_init(void)
+{
+	idle_task.pid = 0;
+	idle_task.esp = 0;
+	idle_task.ebp = 0;
+	idle_task.ebx = 0;
+	idle_task.esi = 0;
+	idle_task.edi = 0;
+	idle_task.priority = TASK_PRIO_IDLE;
+	idle_task.timeslice = TASK_TIMESLICE;
+	idle_task.state = TASK_READY;
+	idle_task.next = &idle_task;
 
-        task_t* prev = current_task;
-        task_t* next = current_task->next;
-        current_task = next;
-        switch_to(prev, next);
+	current_task = &idle_task;
+
+	vga_write("[TASK] Scheduler initialized.\n");
+}
+
+/* 协作式主动让权 */
+void yield(void)
+{
+	task_t *prev, *next;
+
+	if (!current_task)
+		return;
+
+	prev = current_task;
+	next = current_task->next;
+
+	if (next == current_task)
+		return;
+
+	current_task = next;
+	switch_to(prev, next);
+}
+
+/* 获取当前任务 */
+task_t *get_current_task(void)
+{
+	return current_task;
 }
