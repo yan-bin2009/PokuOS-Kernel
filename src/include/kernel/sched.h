@@ -7,7 +7,7 @@ void sched_init(void);
 
 void schedule(void);
 
-void pit_handler(void);
+void pit_handler(void *frame);
 
 void pit_init(void);
 
