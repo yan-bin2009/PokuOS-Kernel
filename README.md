@@ -1,18 +1,28 @@
-# PokuOS-Kernel --- 小型项目
-
-首先这是个学习项目，并非正式项目
+# PokuOS-Kernel 
 
 ### 当前状态
 
 #### 开发者正在积极维护该项目
 
+### 目前实现了什么？
+- 引导暂时采用GRUB（Multiboot标准）
+- 分页内存管理（4KB页表，递归映射）
+- 内核堆分配器
+- 多任务调度暂时使用协作式任务切换
+- 虚拟文件系统（VFS）
+- 初始内存文件系统
+- 简陋的Shell
+- 简单的系统调用（`int 0x80` 提供 `sys_write` 和 `sys_exit`）
+
+
+
 ### 环境要求
 
 - 32位虚拟机
 - 宿主机：base-devel qemu-full （支持 `-m elf_i386`）
+- 完整的工具链（`gcc` `nasm``ld` `qemu-system-i386` ）
 
-
-### 如何编译
+### 如何构建？？？
 
 ```bash
 cd src
@@ -33,59 +43,26 @@ Type 'help' for commands.
 ## 项目结构
 
 ```text
-pokuos/
+PokuOS-Kernel/
 ├── src/
-│   ├── boot/         引导程序
-│   ├── kernel/       中断/调度/系统调用
-│   ├── driver/       键盘/VGA
-│   ├── init/         内核启动加载
-│   ├── include/      公共头文件
-│   └── build.sh
-├── README.md
-└── CHANGELOG.md
+│   ├── boot/               # 引导代码（汇编）
+│   ├── driver/             # 设备驱动（C 源文件）
+│   ├── include/            # 头文件（按模块分类）
+│   │   ├── driver/
+│   │   ├── init/
+│   │   └── kernel/
+│   ├── init/               # 初始化进程（Shell）
+│   ├── kernel/             # 内核核心（所有核心模块）
+│   └── tools/              # 主机工具（生成 initrd）
+├── CHANGELOG.md            # 更新日志
+├── LICENSE                 # 许可证
+├── README.md               # 项目说明
+├── build.sh                # 编译脚本
+└── linker.ld               # 链接脚本
 
 ```
 
 ### 许可证
 
 GNU Lesser General Public License v2.1
-##### 开发者yan-bin2009的联系方式
-```text
-yan20095642558@163.com
-Linux的qq频道：懒惰的linux
-```
 
-```text
-
-第一版说明文档如下：
-
-这是一个比较简陋的玩具内核，目前测试，能在32 位 x86 机器上操作，能够在QEMU中引导，响应键盘中断（由于缺少shell,导致你输入的东西是无法返回相应的指令）并在屏幕上回显文字
-1.创建目的
-我实际上是为了自己能够理解一些操作系统底层原理，包括学习nasm，C语言等等。虽然大多由AI协助。
-2.她目前能干什么？
-很抱歉，什么也干不了。只能吞下你在键盘上打的字
-3.如何启动
- 通过 GRUB 或 QEMU 的 `-kernel` 选项加载,执行"qemu-system-i386 -kernel kernel.bin -m 32"
-4.目前特征
- 保护模式下的段管理和中断处理，支持键盘输入，包括backpace,换行等等。
- 5.环境要求
- x86 架构 Linux（推荐 Arch 因为我就在这个系统上写的）
-`nasm`、`gcc`、`ld`（支持 `-m elf_i386`）
-6.那我怎么构建？
-很简单，我早在src下给你弄好了：
-
-``bash
-cd ~/pokuos/src
-chmod +x build.sh
-./build.sh
-``
-
-7.协议？
- GNU LESSER GENERAL PUBLIC LICENSE，另见于LICENSE文件
-8.补充
-我现在尝试把shell内置里面，或者作为外置软件，内核只需要保持干净就对了。
-以及里面错误的名称：keybord等等，我是懒得改的，我把这些屎一样的代码扔进ai时，他强烈建议我改正。可惜的是我偏偏不改。
-所以不要在意
-                          --yan-bin2009   2026/7/25
-
-```
