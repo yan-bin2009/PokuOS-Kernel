@@ -1,5 +1,6 @@
 #ifndef TASK_H
 #define TASK_H
+
 #include <stdint.h>
 
 #define TASK_RUNNING  0
@@ -7,28 +8,27 @@
 #define TASK_WAITING  2
 #define TASK_EXITED   3
 
-#define TASK_PRIO_NORMAL  10
-#define TASK_PRIO_HIGH    20
-#define TASK_PRIO_IDLE    1
+#define TASK_PRIO_NORMAL 10
+#define TASK_PRIO_HIGH   20
+#define TASK_PRIO_IDLE   1
 
-#define TASK_TIMESLICE    20
-#define STACK_SIZE 4096
+#define TASK_TIMESLICE 20
+#define STACK_SIZE     4096
 
 typedef void (*task_func_t)(void);
 
-typedef struct task
-{
-    int pid;
-    unsigned int esp;
-    unsigned int ebp;
-    unsigned int ebx;
-    unsigned int esi;
-    unsigned int edi;
-    char stack[STACK_SIZE];    /* 内核栈（字节数组） */
-    int priority;
-    int timeslice;
-    int state;
-    struct task* next;
+typedef struct task {
+        int pid;
+        unsigned int esp;
+        unsigned int ebp;
+        unsigned int ebx;
+        unsigned int esi;
+        unsigned int edi;
+        char stack[STACK_SIZE];
+        int priority;
+        int timeslice;
+        int state;
+        struct task *next;
 } task_t;
 
 extern task_t *current_task;

@@ -1,0 +1,15 @@
+# 编译产物
+bin/
+iso/
+*.o
+*.elf
+kernel.bin
+initrd.img
+pokuos.iso
+test.txt
+hello.txt
+tools/make_initrd
+
+# 调试残留
+qemu.log
+*.out

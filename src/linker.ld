@@ -2,30 +2,37 @@ ENTRY(start)
 
 SECTIONS
 {
-        . = 0x100000;
+    . = 0x100000;
 
-       .multiboot : {
-                *(.multiboot)
+    .multiboot ALIGN(4) :
+    {
+        *(.multiboot)
     }
 
-        .text : {
-                *(.text)
+    .text ALIGN(4) :
+    {
+        *(.text)
     }
 
-        .data : {
-                *(.data)
+    .rodata ALIGN(4) :
+    {
+        *(.rodata)
     }
 
-        .rodata : {
-                *(.rodata)
+    .data ALIGN(4) :
+    {
+        *(.data)
     }
 
-        .bss : {
-                *(.bss)
+    .bss ALIGN(16) :
+    {
+        *(COMMON)
+        *(.bss)
     }
 
-        /DISCARD/ : {
-                *(.comment)
-                *(.eh_frame)
+    /DISCARD/ :
+    {
+        *(.comment)
+        *(.eh_frame)
     }
 }

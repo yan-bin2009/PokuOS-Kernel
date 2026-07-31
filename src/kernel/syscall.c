@@ -1,70 +1,69 @@
+#include <stdint.h>
+#include <kernel/serial.h>
 #include <kernel/syscall.h>
 #include <kernel/ports.h>
 #include <driver/vga.h>
-#include <kernel/serial.h>
+#include <driver/keybord.h>
 
-#define SYS_WRITE 4
-#define SYS_EXIT 1
-#define MEM_LIMIT 0x00400000
+// 与 syscall_entry.asm 的 pusha 压栈顺序一致：offset 0 是 EDI
+struct pt_regs
+{
+        uint32_t edi;
+        uint32_t esi;
+        uint32_t ebp;
+        uint32_t esp;
+        uint32_t ebx;
+        uint32_t edx;
+        uint32_t ecx;
+        uint32_t eax;
+};
 
-static int is_valid_ptr(const void* ptr, int len) {
-        unsigned long addr = (unsigned long)ptr;
-        if (addr + len < addr) return 0;
-        if (addr + len > MEM_LIMIT) return 0;
-        return 1;
-}
+static void write_buf(const char *buf, uint32_t len)
+{
+        uint32_t i;
 
-static int sys_write(void) {
-        int fd, len;
-        const char* buf;
-        __asm__ volatile ("mov %%ebx, %0" : "=r"(fd));
-        __asm__ volatile ("mov %%ecx, %0" : "=r"(buf));
-        __asm__ volatile ("mov %%edx, %0" : "=r"(len));
+        for (i = 0; i < len; i++) {
+                char c = buf[i];
 
-        if (fd == 1 && is_valid_ptr(buf, len)) {
-                for (int i = 0; i < len; i++) {
-                        vga_putchar(buf[i]);
-                }
-                return len;
-        }
-        return -1;
-}
-
-static void sys_exit(void) {
-        // 当前无进程管理，停止执行
-        // 未来应回收当前任务并切换到下一个
-        __asm__ volatile ("cli");
-        while (1) {
-                __asm__ volatile ("hlt");
+                vga_putchar(c);
+                if (c == '\n')
+                        serial_write_char('\r');
+                serial_write_char(c);
         }
 }
 
-void __attribute__((interrupt)) syscall_handler(void* frame) {
-        int syscall_no;
-        int ret = -1;
-
-        // 保存调用者寄存器（虽然 interrupt 属性可能已保存，但显式保存更安全）
-        __asm__ volatile ("push %ebx; push %ecx; push %edx");
-
-        __asm__ volatile ("mov %%eax, %0" : "=r"(syscall_no));
-
-        switch (syscall_no) {
-                case SYS_WRITE:
-                        ret = sys_write();
-                        break;
-                case SYS_EXIT:
-                        sys_exit();
-                        break;
-                default:
-                        ret = -1;
-                        break;
-        }
-
-        __asm__ volatile ("mov %0, %%eax" : : "r"(ret));
-        __asm__ volatile ("pop %edx; pop %ecx; pop %ebx");
+static void put_char(char c)
+{
+        vga_putchar(c);
+        if (c == '\n')
+                serial_write_char('\r');
+        serial_write_char(c);
 }
 
-void syscall_init(void) {
-        // 目前只启用中断，后续可增加其他初始化
-        __asm__ volatile ("sti");
+int syscall_handler(struct pt_regs *regs)
+{
+        switch (regs->eax) {
+        case SYS_WRITE:
+                write_buf((const char *)regs->ecx, regs->edx);
+                return regs->edx;
+        case SYS_PUTCHAR:
+                put_char((char)regs->ebx);
+                return 0;
+        case SYS_GETCHAR:
+                return getchar();
+        case SYS_CLEAR:
+                vga_clear();
+                return 0;
+        case SYS_REBOOT:
+                outb(0x64, 0xFE);
+                return 0;
+        case SYS_EXIT:
+                while (1) __asm__ volatile ("hlt");
+        default:
+                return -1;
+        }
+}
+
+void syscall_init(void)
+{
 }

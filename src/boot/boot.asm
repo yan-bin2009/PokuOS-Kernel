@@ -1,11 +1,15 @@
-; SPDX-License-Identifier: LGPL-2.1
-; boot.asm - 32-bit Multiboot bootstrap
-
 section .multiboot
 align 4
         dd 0x1BADB002
         dd 0x03
         dd -(0x1BADB002 + 0x03)
+
+section .bss
+align 4
+global mboot_magic
+global mboot_addr
+mboot_magic: resd 1
+mboot_addr:  resd 1
 
 section .data
 align 16
@@ -31,7 +35,7 @@ gdt_user_code:
         dw 0xFFFF
         dw 0x0
         db 0x0
-        db 0b11111010
+        db 0b11111110
         db 0b11001111
         db 0x0
 gdt_user_data:
@@ -41,6 +45,7 @@ gdt_user_data:
         db 0b11110010
         db 0b11001111
         db 0x0
+global gdt_tss
 gdt_tss:
         dw 104
         dw 0x0
@@ -71,20 +76,14 @@ idt_descriptor:
 kernel_stack_top:
         dd 0x90000
 
-tss:
-        dd 0
-        dd 0x90000
-        dd 0x10
-        times 5 dd 0
-        times 15 dd 0
-        dw 0
-        dw 0
-
 section .text
 global start
 extern kernel_main
 
 start:
+        mov [mboot_magic], eax
+        mov [mboot_addr], ebx
+
         mov esp, [kernel_stack_top]
         and esp, 0xFFFFFFF0
 
@@ -100,9 +99,9 @@ start:
         mov ss, ax
 
         lidt [idt_descriptor]
+
         cli
 
-        ; ebx contains multiboot info pointer – reserved for future
         call kernel_main
 
         cli

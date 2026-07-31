@@ -8,12 +8,11 @@ typedef struct {
     char name[64];
     uint32_t offset;
     uint32_t length;
-} initrd_file_header_t;
+} __attribute__((packed)) initrd_file_header_t;
 
 typedef struct {
     uint32_t nfiles;
-} initrd_header_t;
-
+} __attribute__((packed)) initrd_header_t;
 int main(int argc, char **argv)
 {
     if (argc < 3 || (argc - 1) % 2 != 0) {
