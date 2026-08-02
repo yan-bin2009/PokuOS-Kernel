@@ -1,9 +1,9 @@
 #include <driver/vga.h>
-#include <stdint.h>
 #include <kernel/ports.h>
+#include <stdint.h>
 
 #define VGA_MEMORY 0xB8000
-#define VGA_WIDTH  80
+#define VGA_WIDTH 80
 #define VGA_HEIGHT 25
 
 static uint16_t *vga_buffer = (uint16_t *)VGA_MEMORY;
@@ -24,10 +24,12 @@ static void vga_scroll(void)
 {
         int y, x;
 
-        for (y = 1; y < VGA_HEIGHT; y++) {
-                for (x = 0; x < VGA_WIDTH; x++) {
+        for (y = 1; y < VGA_HEIGHT; y++)
+        {
+                for (x = 0; x < VGA_WIDTH; x++)
+                {
                         vga_buffer[(y - 1) * VGA_WIDTH + x] =
-                                vga_buffer[y * VGA_WIDTH + x];
+                            vga_buffer[y * VGA_WIDTH + x];
                 }
         }
         for (x = 0; x < VGA_WIDTH; x++)
@@ -36,10 +38,12 @@ static void vga_scroll(void)
 
 void vga_putchar(char c)
 {
-        if (c == '\n') {
+        if (c == '\n')
+        {
                 cursor_x = 0;
                 cursor_y++;
-                if (cursor_y >= VGA_HEIGHT) {
+                if (cursor_y >= VGA_HEIGHT)
+                {
                         vga_scroll();
                         cursor_y = VGA_HEIGHT - 1;
                 }
@@ -47,16 +51,21 @@ void vga_putchar(char c)
                 return;
         }
 
-        if (c == '\r') {
+        if (c == '\r')
+        {
                 cursor_x = 0;
                 vga_update_cursor();
                 return;
         }
 
-        if (c == '\b') {
-                if (cursor_x > 0) {
+        if (c == '\b')
+        {
+                if (cursor_x > 0)
+                {
                         cursor_x--;
-                } else if (cursor_y > 0) {
+                }
+                else if (cursor_y > 0)
+                {
                         cursor_y--;
                         cursor_x = VGA_WIDTH - 1;
                 }
@@ -67,10 +76,12 @@ void vga_putchar(char c)
 
         vga_buffer[cursor_y * VGA_WIDTH + cursor_x] = (0x0F << 8) | c;
         cursor_x++;
-        if (cursor_x >= VGA_WIDTH) {
+        if (cursor_x >= VGA_WIDTH)
+        {
                 cursor_x = 0;
                 cursor_y++;
-                if (cursor_y >= VGA_HEIGHT) {
+                if (cursor_y >= VGA_HEIGHT)
+                {
                         vga_scroll();
                         cursor_y = VGA_HEIGHT - 1;
                 }

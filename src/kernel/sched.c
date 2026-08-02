@@ -1,7 +1,8 @@
-#include <kernel/sched.h>
-#include <kernel/ports.h>
-#include <kernel/idt.h>
 #include <driver/vga.h>
+#include <kernel/idt.h>
+#include <kernel/paging.h>
+#include <kernel/ports.h>
+#include <kernel/sched.h>
 #include <stddef.h>
 
 extern task_t *current_task;
@@ -24,8 +25,10 @@ void schedule(void)
         highest_prio = -1;
 
         iter = current_task->next;
-        while (iter != current_task) {
-                if (iter->state == TASK_READY && iter->priority > highest_prio) {
+        while (iter != current_task)
+        {
+                if (iter->state == TASK_READY && iter->priority > highest_prio)
+                {
                         highest_prio = iter->priority;
                         next = iter;
                 }
@@ -33,16 +36,21 @@ void schedule(void)
         }
 
         if (current_task->state == TASK_READY &&
-            current_task->priority >= highest_prio) {
+            current_task->priority >= highest_prio)
+        {
                 next = current_task;
         }
 
-        if (next && next != current_task) {
+        if (next && next != current_task)
+        {
                 if (current_task->timeslice <= 0)
                         current_task->timeslice = TASK_TIMESLICE;
                 current_task = next;
+                load_cr3(next->cr3);
                 switch_to(prev, next);
-        } else if (next == current_task) {
+        }
+        else if (next == current_task)
+        {
                 if (current_task->timeslice > 0)
                         current_task->timeslice--;
         }

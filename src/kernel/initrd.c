@@ -1,7 +1,7 @@
-#include <kernel/initrd.h>
-#include <kernel/heap.h>
-#include <kernel/kstring.h>
 #include <driver/vga.h>
+#include <kernel/heap.h>
+#include <kernel/initrd.h>
+#include <kernel/kstring.h>
 
 static initrd_header_t *initrd_header;
 static initrd_file_header_t *file_headers;
@@ -50,13 +50,15 @@ static struct dentry *initrd_lookup(struct inode *dir, struct dentry *dentry)
                 return NULL;
 
         child = dir->i_children;
-        while (child) {
+        while (child)
+        {
                 if (strcmp(child->d_name, name) == 0)
                         return child;
                 child = child->d_next;
         }
 
-        for (i = 0; i < nroot_files; i++) {
+        for (i = 0; i < nroot_files; i++)
+        {
                 if (strcmp(file_headers[i].name, name) == 0)
                         return vfs_new_dentry(name, &file_inodes[i], vfs_root);
         }
@@ -64,16 +66,16 @@ static struct dentry *initrd_lookup(struct inode *dir, struct dentry *dentry)
 }
 
 static const struct file_operations initrd_file_ops = {
-        .read    = initrd_read,
-        .write   = NULL,
-        .llseek  = NULL,
-        .open    = initrd_open,
-        .release = initrd_release,
-        .readdir = NULL,
+    .read = initrd_read,
+    .write = NULL,
+    .llseek = NULL,
+    .open = initrd_open,
+    .release = initrd_release,
+    .readdir = NULL,
 };
 
 static const struct inode_operations initrd_dir_ops = {
-        .lookup = initrd_lookup,
+    .lookup = initrd_lookup,
 };
 
 struct dentry *initialise_initrd(uint32_t location)
@@ -97,7 +99,8 @@ struct dentry *initialise_initrd(uint32_t location)
         if (!file_inodes)
                 return NULL;
 
-        for (i = 0; i < nroot_files; i++) {
+        for (i = 0; i < nroot_files; i++)
+        {
                 file_headers[i].offset += location;
                 memset(&file_inodes[i], 0, sizeof(struct inode));
                 file_inodes[i].i_ino = i + 2;
@@ -108,10 +111,12 @@ struct dentry *initialise_initrd(uint32_t location)
 
         vfs_mount_root(root_inode);
 
-        if (dev_inode) {
+        if (dev_inode)
+        {
                 struct dentry *dev_dentry = vfs_new_dentry("dev", dev_inode, vfs_root);
 
-                if (dev_dentry) {
+                if (dev_dentry)
+                {
                         dev_dentry->d_next = root_inode->i_children;
                         root_inode->i_children = dev_dentry;
                 }

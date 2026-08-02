@@ -1,9 +1,14 @@
 #include <kernel/idt.h>
 #include <kernel/ports.h>
 #include <kernel/serial.h>
+#include <kernel/task.h>
+#include <kernel/trap.h>
+#include <stddef.h>
 #include <stdint.h>
+#include <vm/vm.h>
 
-struct idt_entry {
+struct idt_entry
+{
         unsigned short base_low;
         unsigned short sel;
         unsigned char always0;
@@ -24,10 +29,17 @@ extern void keybord_entry(void);
 extern void pit_entry(void);
 extern void syscall_entry(void);
 
-void __attribute__((interrupt)) generic_exception_handler(void *frame)
+void __attribute__((interrupt)) page_fault_handler(void *frame,
+                                                   uint32_t error_code)
 {
-        serial_write("Exception!\n");
-        while (1) __asm__ volatile ("hlt");
+        uint32_t cr2;
+        struct vm_map *map;
+
+        __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
+        map = current_task ? current_task->map : NULL;
+        if (map && vm_fault(map, cr2, error_code) == 0)
+                return;
+        exception_trap(frame, error_code, 14);
 }
 
 void __attribute__((interrupt)) user_test_int_handler(void *frame)
@@ -67,8 +79,23 @@ void idt_init(void)
         serial_write("\n");
 
         for (i = 0; i < 32; i++)
-                idt_set_gate(i, (unsigned long)generic_exception_handler,
-                             0x08, GATE_INTERRUPT);
+        {
+                void (*handler)(void);
+                struct idt_entry *e;
+                uint32_t base;
+
+                handler = exc_handlers[i];
+                base = (uint32_t)handler;
+                e = &idt[i];
+                e->base_low = base & 0xFFFF;
+                e->base_high = (base >> 16) & 0xFFFF;
+                e->sel = 0x08;
+                e->always0 = 0;
+                e->flags = GATE_INTERRUPT;
+        }
+
+        idt_set_gate(14, (unsigned long)page_fault_handler,
+                     0x08, GATE_INTERRUPT);
 
         idt_set_gate(IRQ1_VECTOR, (unsigned long)keybord_entry,
                      0x08, GATE_INTERRUPT);
@@ -76,5 +103,5 @@ void idt_init(void)
                      0x08, GATE_INTERRUPT);
         idt_set_gate(0x90, (unsigned long)user_test_int_handler,
                      0x08, GATE_USER);
-        __asm__ volatile ("lidt (%0)" : : "r" (&idtp));
+        __asm__ volatile("lidt (%0)" : : "r"(&idtp));
 }

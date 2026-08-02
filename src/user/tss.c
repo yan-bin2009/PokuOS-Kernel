@@ -1,5 +1,5 @@
-#include <user/tss.h>
 #include <driver/vga.h>
+#include <user/tss.h>
 
 static struct tss_entry tss;
 
@@ -24,7 +24,7 @@ void tss_init(void)
         tss.iomap_base = sizeof(tss);
         tss.ss0 = 0x10;
 
-        __asm__ volatile ("ltr %%ax" : : "a" (0x28));
+        __asm__ volatile("ltr %%ax" : : "a"(0x28));
 }
 
 void tss_set_kernel_stack(uint32_t esp0)

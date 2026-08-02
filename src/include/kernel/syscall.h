@@ -8,6 +8,7 @@
 #define SYS_PUTCHAR 4
 #define SYS_CLEAR  5
 #define SYS_REBOOT 6
+#define SYS_POWEROFF 7
 
 void syscall_init(void);
 

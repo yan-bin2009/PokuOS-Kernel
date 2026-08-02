@@ -2,6 +2,7 @@
 #define TASK_H
 
 #include <stdint.h>
+#include <vm/vm.h>
 
 #define TASK_RUNNING  0
 #define TASK_READY    1
@@ -29,6 +30,8 @@ typedef struct task {
         int timeslice;
         int state;
         struct task *next;
+        struct vm_map *map;
+        unsigned int cr3;
 } task_t;
 
 extern task_t *current_task;

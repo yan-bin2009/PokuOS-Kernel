@@ -1,7 +1,7 @@
-#include <kernel/vfs.h>
+#include <driver/vga.h>
 #include <kernel/heap.h>
 #include <kernel/kstring.h>
-#include <driver/vga.h>
+#include <kernel/vfs.h>
 #include <stddef.h>
 
 struct dentry *vfs_root;
@@ -31,14 +31,16 @@ struct dentry *vfs_new_dentry(const char *name, struct inode *inode,
         memset(dentry, 0, sizeof(struct dentry));
         len = strlen(name) + 1;
         dentry->d_name = (char *)kmalloc(len);
-        if (!dentry->d_name) {
+        if (!dentry->d_name)
+        {
                 kfree(dentry);
                 return NULL;
         }
         strcpy(dentry->d_name, name);
         dentry->d_inode = inode;
         dentry->d_parent = parent;
-        if (parent) {
+        if (parent)
+        {
                 dentry->d_next = parent->d_inode->i_children;
                 parent->d_inode->i_children = dentry;
         }
@@ -80,7 +82,8 @@ static struct dentry *vfs_lookup_component(struct dentry *dir, const char *name)
                 return NULL;
         memset(tmp, 0, sizeof(struct dentry));
         tmp->d_name = (char *)kmalloc(strlen(name) + 1);
-        if (!tmp->d_name) {
+        if (!tmp->d_name)
+        {
                 kfree(tmp);
                 return NULL;
         }
@@ -115,19 +118,23 @@ struct dentry *vfs_lookup(const char *path)
         cur = vfs_root;
         token = path_copy;
 
-        while ((next = strchr(token, '/')) != NULL) {
+        while ((next = strchr(token, '/')) != NULL)
+        {
                 *next = '\0';
                 cur = vfs_lookup_component(cur, token);
-                if (!cur) {
+                if (!cur)
+                {
                         kfree(path_copy);
                         return NULL;
                 }
                 token = next + 1;
         }
 
-        if (strlen(token) > 0) {
+        if (strlen(token) > 0)
+        {
                 cur = vfs_lookup_component(cur, token);
-                if (!cur) {
+                if (!cur)
+                {
                         kfree(path_copy);
                         return NULL;
                 }
@@ -159,8 +166,10 @@ struct file *vfs_open(const char *path, uint32_t flags)
         filp->f_flags = flags;
         filp->f_op = inode->i_fop;
 
-        if (filp->f_op && filp->f_op->open) {
-                if (filp->f_op->open(inode, filp) != 0) {
+        if (filp->f_op && filp->f_op->open)
+        {
+                if (filp->f_op->open(inode, filp) != 0)
+                {
                         kfree(filp);
                         return NULL;
                 }
