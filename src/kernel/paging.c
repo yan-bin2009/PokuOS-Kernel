@@ -1,5 +1,8 @@
 #include <driver/vga.h>
 #include <kernel/paging.h>
+#include <kernel/serial.h>
+#include <kernel/task.h>
+#include <kernel/tier.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/queue.h>
@@ -11,10 +14,15 @@
 #define NUM_PAGES (PHYS_MEM_SIZE / PAGE_SIZE)
 #define PAGE_START_INDEX 1024
 
+int pressure_triggered = 0;
+
 struct vm_page vm_page_array[NUM_PAGES];
 static TAILQ_HEAD(free_page_list, vm_page) vm_page_freeq;
 uint32_t page_directory[1024] __attribute__((aligned(PAGE_SIZE)));
 static uint32_t page_table_0[1024] __attribute__((aligned(PAGE_SIZE)));
+static uint32_t page_table_physmap[4][1024] __attribute__((aligned(PAGE_SIZE)));
+
+#define PHYS_MAP_BASE 0xC0000000
 
 static uint32_t _alloc_phys_page(void)
 {
@@ -42,6 +50,16 @@ static void _free_phys_page(uint32_t phys_addr)
         }
 }
 
+uint32_t free_pages_count(void)
+{
+        struct vm_page *pg;
+        uint32_t count = 0;
+
+        TAILQ_FOREACH(pg, &vm_page_freeq, pageq)
+                count++;
+        return count;
+}
+
 uint32_t alloc_page_frame(void)
 {
         uint32_t phys;
@@ -55,8 +73,30 @@ uint32_t alloc_page_frame(void)
                 {
                         vm_page_array[idx].ref_count = 1;
                 }
+                if (phys < 0x400000)
+                {
+                        serial_write("[ALLOC LOW] phys=");
+                        serial_write_hex(phys);
+                        serial_write("\n");
+                }
+                return phys;
         }
-        return phys;
+
+        vm_handle_pressure();
+
+        phys = _alloc_phys_page();
+        if (phys)
+        {
+                idx = phys >> 12;
+                if (idx < NUM_PAGES)
+                {
+                        vm_page_array[idx].ref_count = 1;
+                }
+                return phys;
+        }
+
+        serial_write("[PAGE] alloc failed after pressure\n");
+        return 0;
 }
 
 uint32_t paging_create_task_pd(void)
@@ -81,7 +121,6 @@ uint32_t paging_create_task_pd(void)
                 else
                         new_pd[i] = 0;
         }
-
         new_pd[1023] = pd_phys | PTE_PRESENT | PTE_RW;
 
         unmap_page((void *)0xE0002000);
@@ -106,7 +145,7 @@ void free_page_frame(uint32_t phys)
                 }
                 if (vm_page_array[idx].ref_count > 0)
                 {
-                        return; /* 还有进程在使用，不释放 */
+                        return;
                 }
         }
 
@@ -184,6 +223,17 @@ unsigned long paging_init(unsigned long mem_start, unsigned long mem_end)
 
         page_directory[0] = ((uint32_t)page_table_0) | PTE_PRESENT | PTE_RW;
         page_directory[1023] = ((uint32_t)page_directory) | PTE_PRESENT | PTE_RW;
+
+        for (i = 0; i < 4; i++)
+        {
+                uint32_t j;
+
+                page_directory[768 + i] =
+                    ((uint32_t)page_table_physmap[i]) | PTE_PRESENT | PTE_RW;
+                for (j = 0; j < 1024; j++)
+                        page_table_physmap[i][j] =
+                            ((i * 1024 + j) * PAGE_SIZE) | PTE_PRESENT | PTE_RW;
+        }
 
         __asm__ volatile("mov %0, %%cr3" : : "r"(page_directory) : "memory");
 

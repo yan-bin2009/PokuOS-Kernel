@@ -1,6 +1,7 @@
 #ifndef _KERNEL_ELF_H
 #define _KERNEL_ELF_H
 
+#include <kernel/tier.h>
 #include <stdint.h>
 
 #define EI_MAG0  0
@@ -48,6 +49,7 @@ typedef struct {
         uint32_t p_align;
 } __attribute__((packed)) Elf32_Phdr;
 
-int elf_load(void *data, uint32_t *entry);
+tier_t elf_assign_tier(const char *path);
+int elf_load(void *data, uint32_t *entry, const char *path);
 
 #endif

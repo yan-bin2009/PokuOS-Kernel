@@ -10,8 +10,8 @@ if [ "${1:-}" = "--fix" ]; then
         MODE="fix"
 fi
 
-CFILES=$(find kernel init driver user -name '*.c' -o -name '*.h' | sort)
-ALLSRC=$(find kernel init driver user \
+CFILES=$(find kernel init driver user fs -name '*.c' -o -name '*.h' | sort)
+ALLSRC=$(find kernel init driver user fs \
         -type f \( -name '*.c' -o -name '*.h' -o -name '*.s' -o -name '*.asm' \) | sort)
 
 FAIL=0

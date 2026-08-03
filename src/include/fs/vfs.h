@@ -1,11 +1,10 @@
 #ifndef _KERNEL_VFS_H
 #define _KERNEL_VFS_H
 
+#include <fs/fs_types.h>
 #include <stdint.h>
 #include <stddef.h>
 
-typedef long ssize_t;
-typedef long long loff_t;
 typedef unsigned int umode_t;
 #define __user
 
@@ -50,12 +49,13 @@ struct inode_operations {
 struct super_operations {
         void (*put_super)(struct super_block *);
         int (*sync_fs)(struct super_block *);
+        int (*readpage)(struct inode *, uint32_t pgoff, void *buf, tier_t tier);
 };
 
 struct super_block {
         uint32_t s_dev;
         uint32_t s_blocksize;
-        struct inode *s_root;
+        struct dentry *s_root;
         const struct super_operations *s_op;
         void *s_fs_info;
 };
@@ -103,5 +103,6 @@ struct inode *vfs_new_inode(uint32_t mode);
 struct dentry *vfs_new_dentry(const char *name, struct inode *inode,
                               struct dentry *parent);
 void vfs_free_dentry(struct dentry *dentry);
+struct dentry *vfs_generic_lookup(struct inode *dir, struct dentry *dentry);
 
 #endif

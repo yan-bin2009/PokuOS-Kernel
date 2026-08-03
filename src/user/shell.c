@@ -14,6 +14,57 @@ static int strcmp(const char *a, const char *b)
         return *a - *b;
 }
 
+static int strlen(const char *s)
+{
+        int n = 0;
+
+        while (s[n])
+                n++;
+        return n;
+}
+
+static void print_hex(unsigned int v)
+{
+        char buf[9];
+        char *p = buf + 8;
+        int i;
+
+        *p = '\0';
+        for (i = 0; i < 8; i++)
+        {
+                unsigned int nib = v & 0xF;
+
+                *--p = nib < 10 ? '0' + nib : 'A' + nib - 10;
+                v >>= 4;
+        }
+        sys_write(p);
+}
+
+static int split(char *cmd, char *argv[], int max)
+{
+        int n = 0;
+        char *p = cmd;
+        int in = 0;
+
+        while (*p)
+        {
+                if (*p == ' ' || *p == '\t')
+                {
+                        *p = '\0';
+                        in = 0;
+                }
+                else if (!in)
+                {
+                        argv[n++] = p;
+                        if (n >= max)
+                                break;
+                        in = 1;
+                }
+                p++;
+        }
+        return n;
+}
+
 void _start(void)
 {
         static char history[HIST_MAX][CMD_MAX];
@@ -101,33 +152,148 @@ void _start(void)
                         hist_count++;
                 }
 
-                if (strcmp(cmd, "help") == 0)
+                if (len > 0)
                 {
-                        sys_write("commands: help clear reboot uname poweroff\n");
-                }
-                else if (strcmp(cmd, "clear") == 0)
-                {
-                        sys_clear();
-                }
-                else if (strcmp(cmd, "reboot") == 0)
-                {
-                        sys_write("Rebooting...\n");
-                        sys_reboot();
-                }
-                else if (strcmp(cmd, "poweroff") == 0)
-                {
-                        sys_write("Powering off...\n");
-                        sys_poweroff();
-                }
-                else if (strcmp(cmd, "uname") == 0)
-                {
-                        sys_write("PokuOS\n");
-                }
-                else if (len > 0)
-                {
-                        sys_write("Unknown command: ");
-                        sys_write(cmd);
-                        sys_write("\n");
+                        char *argv[4];
+                        int n;
+                        int bg = 0;
+                        int pid;
+
+                        n = split(cmd, argv, 4);
+                        for (i = 0; i < n; i++)
+                        {
+                                if (argv[i][0] == '&')
+                                {
+                                        bg = 1;
+                                        n = i;
+                                        break;
+                                }
+                        }
+
+                        if (n == 0)
+                        {
+                                /* 空 */
+                        }
+                        else if (strcmp(argv[0], "help") == 0)
+                        {
+                                sys_write("commands: help clear reboot uname poweroff tier exit wait run\n");
+                        }
+                        else if (strcmp(argv[0], "clear") == 0)
+                        {
+                                sys_clear();
+                        }
+                        else if (strcmp(argv[0], "reboot") == 0)
+                        {
+                                sys_write("Rebooting...\n");
+                                sys_reboot();
+                        }
+                        else if (strcmp(argv[0], "poweroff") == 0)
+                        {
+                                sys_write("Powering off...\n");
+                                sys_poweroff();
+                        }
+                        else if (strcmp(argv[0], "uname") == 0)
+                        {
+                                sys_write("PokuOS\n");
+                        }
+                        else if (strcmp(argv[0], "tier") == 0)
+                        {
+                                int t = sys_tier_query();
+
+                                sys_write("tier=");
+                                sys_putchar('0' + t);
+                                sys_write("\n");
+                        }
+                        else if (strcmp(argv[0], "exit") == 0)
+                        {
+                                sys_write("bye\n");
+                                sys_exit(0);
+                        }
+                        else if (strcmp(argv[0], "wait") == 0)
+                        {
+                                int st = sys_wait(-1);
+
+                                if (st < 0)
+                                {
+                                        sys_write("no child\n");
+                                }
+                                else
+                                {
+                                        sys_write("reaped pid=");
+                                        print_hex((unsigned int)((st >> 8) & 0xFFFF));
+                                        sys_write(" code=");
+                                        print_hex((unsigned int)(st & 0xFF));
+                                        sys_write("\n");
+                                }
+                        }
+                        else
+                        {
+                                char path[CMD_MAX + 16];
+
+                                pid = sys_fork();
+                                if (pid == 0)
+                                {
+                                        int r;
+
+                                        if (argv[0][0] == '/')
+                                        {
+                                                int i;
+
+                                                for (i = 0; i < CMD_MAX && argv[0][i]; i++)
+                                                        path[i] = argv[0][i];
+                                                path[i] = '\0';
+                                        }
+                                        else
+                                        {
+                                                int i;
+
+                                                for (i = 0; "/mnt/"[i]; i++)
+                                                        path[i] = "/mnt/"[i];
+                                                for (; i < CMD_MAX + 16 && argv[0][i - 5]; i++)
+                                                        path[i] = argv[0][i - 5];
+                                                path[i] = '\0';
+                                        }
+
+                                        r = sys_exec(path);
+
+                                        sys_write("exec failed (");
+                                        sys_write(path);
+                                        sys_write(") ret=");
+                                        print_hex((unsigned int)r);
+                                        sys_write("\n");
+                                        sys_exit(1);
+                                }
+                                else if (pid > 0)
+                                {
+                                        if (bg)
+                                        {
+                                                sys_write("[bg] child pid=");
+                                                print_hex((unsigned int)pid);
+                                                sys_write("\n");
+                                        }
+                                        else
+                                        {
+                                                int st = sys_wait(pid);
+
+                                                if (st < 0)
+                                                {
+                                                        sys_write("wait failed\n");
+                                                }
+                                                else
+                                                {
+                                                        sys_write("done pid=");
+                                                        print_hex((unsigned int)((st >> 8) & 0xFFFF));
+                                                        sys_write(" code=");
+                                                        print_hex((unsigned int)(st & 0xFF));
+                                                        sys_write("\n");
+                                                }
+                                        }
+                                }
+                                else
+                                {
+                                        sys_write("fork failed\n");
+                                }
+                        }
                 }
         }
 }

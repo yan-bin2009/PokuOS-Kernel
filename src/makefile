@@ -8,16 +8,20 @@ CFLAGS = -m32 -ffreestanding -nostdlib -fno-pie -fno-stack-protector -mno-red-zo
 NASMFLAGS = -f elf32
 LDFLAGS = -m elf_i386 -T linker.ld -no-pie
 
-CSRCS = $(wildcard kernel/*.c init/*.c driver/*.c user/*.c vm/*.c)
+CSRCS = $(wildcard kernel/*.c init/*.c driver/*.c vm/*.c fs/*.c)
 COBJS = $(addprefix bin/, $(notdir $(CSRCS:.c=.o)))
 KOBJS = bin/boot.o bin/switch_to.o bin/syscall_entry.o bin/pit_entry.o \
-	bin/keybord_entry.o bin/user-mod.o
+	bin/keybord_entry.o bin/user-mod.o bin/tss.o
 OBJS = $(KOBJS) $(COBJS)
 
 all: kernel.bin initrd.img
 
-run: iso
-	$(QEMU) -cdrom pokuos.iso -no-reboot
+disk.img:
+	printf 'POKUOS-TEST-DISK' | dd of=disk.img bs=512 count=1 conv=notrunc
+	dd if=/dev/zero of=disk.img bs=512 count=8192 seek=1 conv=notrunc
+
+run: iso disk.img
+	$(QEMU) -cdrom pokuos.iso -drive file=disk.img,format=raw,if=ide -no-reboot
 
 kernel.bin: $(OBJS)
 	$(LD) $(LDFLAGS) $^ -o $@
@@ -49,9 +53,13 @@ bin/%.o: init/%.c | bin
 bin/%.o: driver/%.c | bin
 	$(CC) $(CFLAGS) -c $< -o $@
 
-bin/%.o: user/%.c | bin
-	$(CC) $(CFLAGS) -c $< -o $@
 bin/%.o: vm/%.c | bin
+	$(CC) $(CFLAGS) -c $< -o $@
+
+bin/tss.o: user/tss.c | bin
+	$(CC) $(CFLAGS) -c $< -o $@
+
+bin/%.o: fs/%.c | bin
 	$(CC) $(CFLAGS) -c $< -o $@
 
 bin:
@@ -60,11 +68,15 @@ bin:
 user/shell.elf:
 	$(MAKE) -C user
 
-tools/make_initrd: tools/make_initrd.c
-	$(CC) $< -o $@
+initrd.img: motd
+	tar --format=ustar -cf initrd.img motd
 
-initrd.img: user/shell.elf tools/make_initrd motd
-	./tools/make_initrd motd motd user/shell.elf shell.elf
+big.txt:
+	head -c 32768 /dev/zero | tr '\0' 'A' > big.txt
+
+disk.img: user/shell.elf big.txt
+	dd if=/dev/zero of=disk.img bs=512 count=8192
+	tar --format=ustar -cf - -C user shell.elf forktest.elf hello.elf -C .. big.txt | dd of=disk.img conv=notrunc
 
 iso: kernel.bin initrd.img
 	rm -rf iso
@@ -76,7 +88,7 @@ iso: kernel.bin initrd.img
 	@echo "ISO ready: pokuos.iso"
 
 clean:
-	rm -rf bin kernel.bin initrd.img iso pokuos.iso tools/make_initrd
+	rm -rf bin kernel.bin initrd.img iso pokuos.iso disk.img tools/make_initrd
 	$(MAKE) -C user clean
 
 format-check:

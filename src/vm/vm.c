@@ -2,16 +2,20 @@
  * 这个是仿制freebsd的vm虚拟内存机制
  * 大爱freebsd
  * 感谢freebsd的馈赠
-*/
+ */
 #include <kernel/heap.h>
 #include <kernel/paging.h>
 #include <kernel/serial.h>
+#include <kernel/task.h>
+#include <kernel/tier.h>
 #include <stdint.h>
 #include <sys/queue.h>
 #include <vm/vm.h>
 
 #define VM_PAGE_SIZE 4096
-/*国家分配对象，初始化引用计数页数*/
+
+extern int pressure_triggered;
+
 struct vm_object *vm_object_alloc(uint32_t pages)
 {
         struct vm_object *obj;
@@ -26,7 +30,7 @@ struct vm_object *vm_object_alloc(uint32_t pages)
         TAILQ_INIT(&obj->memq);
         return obj;
 }
-/*统计当前的用户空间（<3GB）已映射物理页数量*/
+
 static uint32_t vm_count_user_pages(void)
 {
         uint32_t *pd = (uint32_t *)0xFFFFF000;
@@ -47,7 +51,7 @@ static uint32_t vm_count_user_pages(void)
         }
         return n;
 }
-/* 扫描用户页表，把物理页表挂入vm_object 的 memq 链   */
+
 static void vm_scan_user_pages(struct vm_object *obj)
 {
         uint32_t *pd = (uint32_t *)0xFFFFF000;
@@ -74,7 +78,7 @@ static void vm_scan_user_pages(struct vm_object *obj)
                 }
         }
 }
-/*创建进程vm_map：复制当前cr3,创建user_object 并录入已映射页*/
+
 struct vm_map *vm_map_create(void)
 {
         struct vm_map *map;
@@ -96,14 +100,14 @@ struct vm_map *vm_map_create(void)
         vm_scan_user_pages(map->user_object);
         return map;
 }
-/* 增加对象引用计数*/
+
 void vm_object_reference(struct vm_object *obj)
 {
         if (obj)
                 obj->ref_count++;
 }
-/* 通过临时窗口（0xE0000000/ 0xE0001000）复制物理页内容 */
-static void vm_copy_phys(uint32_t old_phys, uint32_t new_phys)
+
+void vm_copy_phys(uint32_t old_phys, uint32_t new_phys)
 {
         uint32_t *old_v;
         uint32_t *new_v;
@@ -118,7 +122,7 @@ static void vm_copy_phys(uint32_t old_phys, uint32_t new_phys)
         unmap_page((void *)0xE0000000);
         unmap_page((void *)0xE0001000);
 }
-/*缺页处理COW*/
+
 int vm_fault_cow(struct vm_map *map, uint32_t vaddr)
 {
         uint32_t *pd;
@@ -142,23 +146,23 @@ int vm_fault_cow(struct vm_map *map, uint32_t vaddr)
         pte = pt[pt_idx];
         if (!(pte & PTE_PRESENT))
                 return -1;
+        if (!(pte & PTE_USER))
+                return -1;
         if (pte & PTE_RW)
                 return 0;
         old_phys = pte & 0xFFFFF000;
         old_pg = &vm_page_array[old_phys >> 12];
-        //就这里可以用，直接可写
         if (old_pg->ref_count == 1)
         {
                 pt[pt_idx] |= PTE_RW;
                 __asm__ volatile("invlpg (%0)" : : "r"(vaddr) : "memory");
                 return 0;
         }
-        //多进程共享，国家分配新页并复制内容
         new_phys = alloc_page_frame();
         if (!new_phys)
                 return -1;
         vm_copy_phys(old_phys, new_phys);
-        free_page_frame(old_phys);    //减少原页引用计数
+        free_page_frame(old_phys);
         pt[pt_idx] = new_phys | (pte & 0xFFF) | PTE_RW;
         __asm__ volatile("invlpg (%0)" : : "r"(vaddr) : "memory");
         cow_count++;
@@ -175,14 +179,14 @@ int vm_fault_cow(struct vm_map *map, uint32_t vaddr)
         serial_write("\n");
         return 0;
 }
-/*缺页总进口，根据 error_code 判定是否为 COW 写保护违例，若是则交由 vm_fault_cow*/
+
 int vm_fault(struct vm_map *map, uint32_t vaddr, uint32_t error_code)
 {
         if (map && (error_code & 4) && (error_code & 1) && (error_code & 2))
                 return vm_fault_cow(map, vaddr);
         return -1;
 }
-/* 将进程所有用户页表项置为只读，并设置 ref_count=2*/
+
 void vm_protect_readonly(struct vm_map *map)
 {
         uint32_t *pd = (uint32_t *)0xFFFFF000;
@@ -208,7 +212,7 @@ void vm_protect_readonly(struct vm_map *map)
                 }
         }
 }
-/* 创建影子对象：引用计数 +1，对象标记为 COW */
+
 struct vm_object *vm_object_shadow(struct vm_object *backing)
 {
         struct vm_object *obj;
@@ -222,7 +226,7 @@ struct vm_object *vm_object_shadow(struct vm_object *backing)
                 backing->ref_count++;
         return obj;
 }
-/* 释放对象：沿 shadow 链递归释放，归还所有物理页 */
+
 void vm_object_deallocate(struct vm_object *obj)
 {
         struct vm_object *next;
@@ -253,7 +257,49 @@ void vm_object_deallocate(struct vm_object *obj)
                 obj = next;
         }
 }
-/*初始化*/
+
+void vm_handle_pressure(void)
+{
+        task_t *current = get_current_task();
+        if (!current)
+                return;
+
+        uint32_t free = free_pages_count();
+
+        if (free < FREE_PAGES_CRITICAL && current->tier == TIER_USER) {
+                current->tier = TIER_CRITICAL;
+                serial_write("[PRESSURE] CRITICAL triggered, pid=");
+                serial_write_hex(current->pid);
+                serial_write(" free_pages=");
+                serial_write_hex(free);
+                serial_write("\n");
+                pressure_triggered = 1;
+        } else if (free < FREE_PAGES_WARN) {
+                serial_write("[PRESSURE] WARN: low memory, free_pages=");
+                serial_write_hex(free);
+                serial_write("\n");
+        }
+}
+
+void vm_release_pressure(void)
+{
+        task_t *current = get_current_task();
+        if (!current)
+                return;
+
+        uint32_t free = free_pages_count();
+
+        if (pressure_triggered && current->tier == TIER_CRITICAL && free >= FREE_PAGES_WARN) {
+                current->tier = TIER_USER;
+                pressure_triggered = 0;
+                serial_write("[PRESSURE] released, pid=");
+                serial_write_hex(current->pid);
+                serial_write(" free_pages=");
+                serial_write_hex(free);
+                serial_write("\n");
+        }
+}
+
 void vm_init(void)
 {
 }

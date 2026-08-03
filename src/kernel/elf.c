@@ -3,10 +3,36 @@
 #include <kernel/kstring.h>
 #include <kernel/paging.h>
 #include <kernel/serial.h>
-
+#include <kernel/task.h>
+#include <kernel/tier.h>
 #define PAGE_SIZE 4096
 
-int elf_load(void *data, uint32_t *entry)
+tier_t elf_assign_tier(const char *path)
+{
+        const char *name;
+        const char *p;
+
+        if (!path)
+                return TIER_USER;
+
+        name = path;
+        for (p = path; *p; p++)
+        {
+                if (*p == '/')
+                        name = p + 1;
+        }
+
+        if (strcmp(name, "shell") == 0 ||
+            strcmp(name, "init") == 0 ||
+            strcmp(name, "shell.elf") == 0)
+        {
+                return TIER_SYSTEM;
+        }
+
+        return TIER_USER;
+}
+
+int elf_load(void *data, uint32_t *entry, const char *path)
 {
         Elf32_Ehdr *ehdr;
         Elf32_Phdr *phdr;
@@ -47,6 +73,12 @@ int elf_load(void *data, uint32_t *entry)
 
         *entry = ehdr->e_entry;
         phdr = (Elf32_Phdr *)((uint8_t *)data + ehdr->e_phoff);
+
+        serial_write("[elf] entry=");
+        serial_write_hex(ehdr->e_entry);
+        serial_write(" phnum=");
+        serial_write_hex(ehdr->e_phnum);
+        serial_write("\n");
 
         for (i = 0; i < ehdr->e_phnum; i++)
         {

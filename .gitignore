@@ -6,6 +6,8 @@ iso/
 kernel.bin
 initrd.img
 pokuos.iso
+disk.img
+big.txt
 test.txt
 hello.txt
 tools/make_initrd

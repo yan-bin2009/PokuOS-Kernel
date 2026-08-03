@@ -1,3 +1,4 @@
+#include <kernel/serial.h>
 /*
  * 参考linux-0.99键盘工艺，感谢linus的馈赠！！！
  */
@@ -32,7 +33,7 @@ static const unsigned char scancode_to_ascii[128] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-static const char shift_symbols[] = ")!@#$%^&*(";
+static const char shift_symbols[] = "!@#$%^&*(";
 
 static void push_to_buffer(char c)
 {
@@ -130,7 +131,6 @@ void keybord_handler(void *frame)
                 outb(0x20, 0x20);
                 return;
         }
-
         up_flag = scancode & 0x80;
         scancode &= 0x7F;
 

@@ -54,6 +54,8 @@ struct vm_object *vm_object_shadow(struct vm_object *backing);
 
 int vm_fault_cow(struct vm_map *map, uint32_t vaddr);
 
+void vm_copy_phys(uint32_t old_phys, uint32_t new_phys);
+
 int vm_fault(struct vm_map *map, uint32_t vaddr, uint32_t error_code);
 
 void vm_protect_readonly(struct vm_map *map);

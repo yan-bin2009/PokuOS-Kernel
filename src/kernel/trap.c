@@ -209,6 +209,12 @@ void exception_trap(void *frame, uint32_t error_code, uint32_t vector)
                 trap_out("NULL");
         }
         trap_out("\n==============================\n");
+
+        if (is_user)
+        {
+                trap_out("USER task killed, returning to scheduler\n");
+                task_exit(vector);
+        }
         while (1)
         {
                 __asm__ volatile("hlt");

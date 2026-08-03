@@ -1,10 +1,13 @@
 #include <driver/vga.h>
+#include <fs/mount.h>
+#include <fs/vfs.h>
 #include <kernel/heap.h>
 #include <kernel/kstring.h>
-#include <kernel/vfs.h>
 #include <stddef.h>
 
 struct dentry *vfs_root;
+
+static uint32_t vfs_ino_next = 1;
 
 struct inode *vfs_new_inode(uint32_t mode)
 {
@@ -14,6 +17,7 @@ struct inode *vfs_new_inode(uint32_t mode)
         if (!inode)
                 return NULL;
         memset(inode, 0, sizeof(struct inode));
+        inode->i_ino = vfs_ino_next++;
         inode->i_mode = mode;
         inode->i_links = 1;
         return inode;
@@ -96,18 +100,32 @@ static struct dentry *vfs_lookup_component(struct dentry *dir, const char *name)
         return res;
 }
 
-struct dentry *vfs_lookup(const char *path)
+struct dentry *vfs_generic_lookup(struct inode *dir, struct dentry *dentry)
+{
+        struct dentry *child;
+
+        child = dir->i_children;
+        while (child)
+        {
+                if (strcmp(child->d_name, dentry->d_name) == 0)
+                        return child;
+                child = child->d_next;
+        }
+        return NULL;
+}
+
+static struct dentry *vfs_lookup_from(struct dentry *base, const char *path)
 {
         char *path_copy, *token, *next;
         struct dentry *cur;
         size_t len;
 
-        if (!path || !vfs_root)
+        if (!path || !base)
                 return NULL;
         if (*path == '/')
                 path++;
         if (*path == '\0')
-                return vfs_root;
+                return base;
 
         len = strlen(path) + 1;
         path_copy = (char *)kmalloc(len);
@@ -115,7 +133,7 @@ struct dentry *vfs_lookup(const char *path)
                 return NULL;
         strcpy(path_copy, path);
 
-        cur = vfs_root;
+        cur = base;
         token = path_copy;
 
         while ((next = strchr(token, '/')) != NULL)
@@ -142,6 +160,21 @@ struct dentry *vfs_lookup(const char *path)
 
         kfree(path_copy);
         return cur;
+}
+
+struct dentry *vfs_lookup(const char *path)
+{
+        struct super_block *sb;
+        const char *rest;
+
+        if (!path || !vfs_root)
+                return NULL;
+
+        sb = vfs_find_mount(path, &rest);
+        if (sb && sb->s_root)
+                return vfs_lookup_from(sb->s_root, rest);
+
+        return vfs_lookup_from(vfs_root, path);
 }
 
 struct file *vfs_open(const char *path, uint32_t flags)
