@@ -62,7 +62,57 @@
 - 全局代码的风格统一：花符号另起，8位缩进，极少注释
 ## 2026-08-03(V26.1.1)
 - 修补了些bug
-- 移植了freebsd的VM虚拟内存
+- VM虚拟内存
 - 重新写了键盘驱动，感谢linux的馈赠（参考linux-0.99）
 - 重写makefile
 - 经过慎重考虑，删掉部分代码
+
+## 2026-08-04(V26.2)
+- 异常处理框架（trap.c 完整实现）
+- capability 权限模型(细粒度,syscall权限控制)
+- 沙盒支持
+- 代码规范工具
+- shell.c：新增 tier/wait 命令，fork/exec/wait 流程完善
+- 四级 Tier 权限系统
+#### TIER_KERNEL > TIER_SYSTEM > TIER_USER > TIER_CRITICAL，不仅用于调度优先级，还控制内存压力响应、capability 分配和系统调用权限。
+-  Capability 能力模型
+#### 15 种 capability 位掩码（CAP_WRITE/CAP_READ/CAP_FORK/CAP_EXEC/CAP_REBOOT/CAP_POWEROFF 等），用户态默认仅基础 IO 权限，特权操作需显式授权。
+
+
+
+
+
+ 接下来是重要的东西:
+ 内核实现：src/kernel/process.c:165 — sys_fork()
+- 收集父进程用户页表
+- 创建子任务槽，继承/覆盖沙盒配置（caps/mem_limit/cpu_quota/root_path/tier）
+- 创建子进程页目录（paging_create_task_pd()）
+- 复制用户物理页（vm_copy_phys()）
+- 构造子进程内核栈（fork_return + pusha + int0x80 帧）
+- 用户态调用：src/user/lib/syscall.h:83 — sys_fork()
+- 通过 int $0x80 触发，系统调用号 SYS_FORK = 10
+调度器 (kernel/sched.c)
+- 按 tier 分配时间片（内核1/系统2/用户3）
+- set_task_timeslice() 初始化/切换时更新时间片
+- PIT 中断集成看门狗 tick（每 50 tick 触发）
+任务管理 (kernel/task.c)
+- 新增 tier_override、mlfq_level、caps、mem_limit、cpu_quota、root_path、wd_managed 等字段
+- task_set_tier() / task_set_mlfq_level()：动态调整任务等级和 MLFQ 队列
+- task_quota_period_reset()：CPU 配额周期重置
+- task_reap_orphans()：孤儿进程回收
+- task_find_child() / task_exit_handler()：子进程查找和退出处理
+系统调用 (kernel/syscall.c)
+- 新增 user_range_valid()：用户指针合法性校验（逐页检查 PTE_PRESENT + PTE_USER）
+- 新增 cap_for()：系统调用 → capability 映射
+- 新增 SYS_FORK_WITH_SANDBOX、SYS_EXEC、SYS_WAIT 三个系统调用
+- SYS_TIER_QUERY / SYS_TIER_REQUEST：查询/设置任务等级
+- SYS_REBOOT / SYS_POWEROFF：ACPI 关机/重启
+构建系统
+- makefile 重构：支持 fs/ 目录编译、bin/ 目标文件目录
+- user/makefile：用户程序独立构建
+- 新增 tools/check-format.sh：代码格式检查（尾随空格/Tab/clang-format）
+头文件体系
+- 新增 30+ 个头文件，按模块分类（driver/fs/kernel/vm/user/init/sys）
+- sys/queue.h：BSD TAILQ 双向链表宏（来自 Berkeley）
+
+代码行数超过6500
