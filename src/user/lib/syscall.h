@@ -2,7 +2,6 @@
 #define _USER_SYSCALL_H
 
 #define SYS_WRITE 0
-#define SYS_READ 1
 #define SYS_EXIT 2
 #define SYS_GETCHAR 3
 #define SYS_PUTCHAR 4
@@ -15,6 +14,12 @@
 #define SYS_EXEC 11
 #define SYS_WAIT 12
 #define SYS_FORK_WITH_SANDBOX 13
+#define SYS_MLFQ_QUERY 14
+#define SYS_YIELD 15
+#define SYS_KILL 18
+#define SYS_SET_TIER 19
+#define SYS_UNAME 20
+#define SYS_SANDBOX_QUERY 22
 
 static inline int sys_write(const char *s)
 {
@@ -80,6 +85,19 @@ static inline int sys_tier_request(int tier)
         return ret;
 }
 
+static inline int sys_mlfq_query(void)
+{
+        int ret;
+
+        __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_MLFQ_QUERY));
+        return ret;
+}
+
+static inline void sys_yield(void)
+{
+        __asm__ volatile("int $0x80" : : "a"(SYS_YIELD));
+}
+
 static inline int sys_fork(void)
 {
         int ret;
@@ -97,12 +115,12 @@ static inline int sys_fork_with_sandbox(const void *config)
         return ret;
 }
 
-static inline int sys_exec(const char *path)
+static inline int sys_exec(const char *path, char *const argv[])
 {
         int ret;
 
         __asm__ volatile("int $0x80" : "=a"(ret)
-                         : "a"(SYS_EXEC), "b"(path));
+                         : "a"(SYS_EXEC), "b"(path), "c"(argv));
         return ret;
 }
 
@@ -123,5 +141,55 @@ struct fork_sandbox_config_user
         char *root_path;
         int tier_override;
 };
+
+/* 与内核 struct sandbox_status 布局一致 */
+struct sandbox_status_user
+{
+        int pid;
+        unsigned int caps;
+        unsigned int tier;
+        unsigned int mem_limit_lo;
+        unsigned int mem_limit_hi;
+        unsigned int cpu_quota;
+        unsigned int pages_charged;
+        unsigned int quota_used_ticks;
+        char root_path[64];
+};
+
+static inline int sys_kill(int pid)
+{
+        int ret;
+
+        __asm__ volatile("int $0x80" : "=a"(ret)
+                         : "a"(SYS_KILL), "b"(pid));
+        return ret;
+}
+
+static inline int sys_set_tier(int tier)
+{
+        int ret;
+
+        __asm__ volatile("int $0x80" : "=a"(ret)
+                         : "a"(SYS_SET_TIER), "b"(tier));
+        return ret;
+}
+
+static inline int sys_uname(char *buf)
+{
+        int ret;
+
+        __asm__ volatile("int $0x80" : "=a"(ret)
+                         : "a"(SYS_UNAME), "b"(buf));
+        return ret;
+}
+
+static inline int sys_sandbox_query(struct sandbox_status_user *st)
+{
+        int ret;
+
+        __asm__ volatile("int $0x80" : "=a"(ret)
+                         : "a"(SYS_SANDBOX_QUERY), "b"(st));
+        return ret;
+}
 
 #endif

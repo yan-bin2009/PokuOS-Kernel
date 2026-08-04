@@ -3,26 +3,22 @@ LD = ld
 CFLAGS = -m32 -ffreestanding -nostdlib -fno-pie -fno-stack-protector -mno-red-zone -mno-sse -mno-sse2 -mno-mmx -mno-3dnow -msoft-float -I. -I../include
 LDFLAGS = -m elf_i386 -T user.ld -nostdlib
 
-TARGETS = shell.elf forktest.elf hello.elf
-SRCS = $(wildcard *.c)
-OBJS = $(SRCS:.c=.o)
+SRCS = $(filter-out tss.c,$(wildcard *.c))
+TARGETS = $(SRCS:.c=.elf)
 
 all: $(TARGETS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-shell.elf: shell.o
-	$(LD) $(LDFLAGS) -o $@ $^
+lib/crt0.o: lib/crt0.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
-forktest.elf: fork_test.o
-	$(LD) $(LDFLAGS) -o $@ $^
-
-hello.elf: hello.o
+%.elf: %.o lib/crt0.o
 	$(LD) $(LDFLAGS) -o $@ $^
 
 clean:
-	rm -f *.o *.elf
+	rm -f *.o *.elf lib/*.o
 
 initrd: $(TARGETS)
 	cp *.elf ../initrd/

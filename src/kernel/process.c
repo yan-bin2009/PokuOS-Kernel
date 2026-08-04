@@ -1,8 +1,10 @@
 #include <fs/vfs.h>
 #include <kernel/elf.h>
+#include <kernel/errno.h>
 #include <kernel/heap.h>
 #include <kernel/kstring.h>
 #include <kernel/paging.h>
+#include <kernel/process.h>
 #include <kernel/pt_regs.h>
 #include <kernel/sandbox.h>
 #include <kernel/sched.h>
@@ -210,7 +212,7 @@ int sys_fork(struct pt_regs *regs, const struct fork_sandbox_config *sb)
         child->priority = parent->priority;
         child->timeslice = TASK_TIMESLICE;
         child->state = TASK_READY;
-        child->mlfq_level = parent->mlfq_level;
+        child->mlfq_level = 0;
         child->parent = parent;
         child->map = NULL;
         child->wd_managed = 0;
@@ -312,20 +314,6 @@ int sys_fork(struct pt_regs *regs, const struct fork_sandbox_config *sb)
 
         enqueue_task(child);
 
-        serial_write("[fork] cur=");
-        serial_write_hex((uint32_t)parent);
-        serial_write(" child=");
-        serial_write_hex((uint32_t)child);
-        serial_write(" pid=");
-        serial_write_hex(parent->pid);
-        serial_write(" childpid=");
-        serial_write_hex(child->pid);
-        serial_write(" pages=");
-        serial_write_hex(npages);
-        serial_write(" tier=");
-        serial_write(child->tier == TIER_SYSTEM ? "SYSTEM" : "USER");
-        serial_write("\n");
-
         return child->pid;
 }
 
@@ -334,7 +322,36 @@ static void free_built_pd(uint32_t pd_phys, uint32_t target_cr3)
         teardown_current_pd(pd_phys, target_cr3);
 }
 
-int sys_exec(struct pt_regs *regs, const char *path)
+/* 在用户栈顶构造 argc/argv：esp -> [argc][argv[]][NULL][字符串区] */
+static uint32_t build_arg_stack(char argv[][EXEC_ARG_MAXLEN])
+{
+        uint32_t str_addr[MAX_EXEC_ARGS];
+        char *sp;
+        int argc;
+        int i;
+
+        sp = (char *)(USER_STACK_VIRT + 4096);
+        argc = 0;
+        while (argc < MAX_EXEC_ARGS && argv[argc][0])
+        {
+                uint32_t n = strlen(argv[argc]) + 1;
+
+                sp -= n;
+                memcpy(sp, argv[argc], n);
+                str_addr[argc] = (uint32_t)sp;
+                argc++;
+        }
+        sp = (char *)((uint32_t)sp & ~3u);
+        sp -= (argc + 1) * 4;
+        for (i = 0; i < argc; i++)
+                ((uint32_t *)sp)[i] = str_addr[i];
+        ((uint32_t *)sp)[argc] = 0;
+        sp -= 4;
+        *(uint32_t *)sp = (uint32_t)argc;
+        return (uint32_t)sp;
+}
+
+int sys_exec(struct pt_regs *regs, const char *path, char argv[][EXEC_ARG_MAXLEN])
 {
         task_t *t = current_task;
         struct file *f;
@@ -348,56 +365,50 @@ int sys_exec(struct pt_regs *regs, const char *path)
         char resolved[128];
 
         if (!t || !regs || !path)
-                return -1;
+                return -EINVAL;
 
         resolve_path(t, path, resolved, sizeof(resolved));
 
         f = vfs_open(resolved, O_RDONLY);
         if (!f)
-        {
-                serial_write("[exec] open failed: ");
-                serial_write(resolved);
-                serial_write("\n");
-                return -1;
-        }
+                return -ENOENT;
         elf_data = (uint8_t *)kmalloc(EXEC_BUF_SIZE);
         if (!elf_data)
         {
                 vfs_close(f);
-                return -1;
+                return -ENOMEM;
         }
         bytes = vfs_read(f, (char *)elf_data, EXEC_BUF_SIZE - 1);
         vfs_close(f);
         if (bytes <= 0)
         {
                 kfree(elf_data);
-                return -1;
+                return -EIO;
         }
 
         new_pd = paging_create_task_pd();
         if (!new_pd)
         {
                 kfree(elf_data);
-                return -1;
+                return -ENOMEM;
         }
 
         load_cr3(new_pd);
 
         if (elf_load(elf_data, &entry, resolved) != 0)
         {
-                load_cr3(t->cr3);
+                /* 当前 cr3 仍是 new_pd，由 free_built_pd 释放并切回旧 PD */
                 free_built_pd(new_pd, t->cr3);
                 kfree(elf_data);
-                return -1;
+                return -ENOEXEC;
         }
 
         user_stack_phys = alloc_page_frame();
         if (!user_stack_phys)
         {
-                load_cr3(t->cr3);
                 free_built_pd(new_pd, t->cr3);
                 kfree(elf_data);
-                return -1;
+                return -ENOMEM;
         }
         map_page((void *)USER_STACK_VIRT, (void *)user_stack_phys,
                  PTE_PRESENT | PTE_RW | PTE_USER);
@@ -410,7 +421,7 @@ int sys_exec(struct pt_regs *regs, const char *path)
 
         t->cr3 = new_pd;
         t->user_entry = entry;
-        t->user_stack = USER_STACK_VIRT + 4096;
+        t->user_stack = build_arg_stack(argv);
         t->map = NULL;
         t->pages_charged = count_user_pages();
 
@@ -439,7 +450,6 @@ int sys_exec(struct pt_regs *regs, const char *path)
         p[9] = 0x202;
         p[10] = t->user_stack;
         p[11] = 0x23;
-
         kfree(elf_data);
         return 0;
 }
@@ -469,12 +479,6 @@ int sys_wait(int pid)
         child_pid = child->pid;
         code = child->exit_code;
         free_task_slot(child);
-
-        serial_write("[wait] pid=");
-        serial_write_hex(child_pid);
-        serial_write(" code=");
-        serial_write_hex(code);
-        serial_write("\n");
 
         return (child_pid << 8) | (code & 0xFF);
 }
@@ -555,6 +559,10 @@ task_t *spawn_user_process(const char *path)
                  (void *)user_stack_phys,
                  PTE_PRESENT | PTE_RW | PTE_USER);
 
+        /* 空参数帧：crt0 从 [esp] 读 argc、[esp+4] 读 argv */
+        *((uint32_t *)(USER_STACK_VIRT + 4096 - 4)) = 0;
+        *((uint32_t *)(USER_STACK_VIRT + 4096 - 8)) = 0;
+
         t = create_task(user_process_entry, TASK_PRIO_NORMAL);
         if (!t)
         {
@@ -572,7 +580,7 @@ task_t *spawn_user_process(const char *path)
 
         t->cr3 = task_pd;
         t->user_entry = entry;
-        t->user_stack = USER_STACK_VIRT + 4096;
+        t->user_stack = USER_STACK_VIRT + 4096 - 8;
         t->pages_charged = count_user_pages();
 
         assigned = elf_assign_tier(path);
@@ -580,16 +588,6 @@ task_t *spawn_user_process(const char *path)
         t->caps = (assigned == TIER_SYSTEM) ? CAP_SYSTEM_DEFAULT : CAP_USER_DEFAULT;
 
         enqueue_task(t);
-
-        serial_write("[spawn] pid=");
-        serial_write_hex(t->pid);
-        serial_write(" entry=");
-        serial_write_hex(entry);
-        serial_write(" tier=");
-        serial_write(assigned == TIER_SYSTEM ? "SYSTEM" : "USER");
-        serial_write(" (");
-        serial_write(path);
-        serial_write(")\n");
 
         kfree(elf_data);
         return t;

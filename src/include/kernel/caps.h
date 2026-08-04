@@ -18,6 +18,11 @@
 #define CAP_POWEROFF     (1u << 12)
 #define CAP_KILL         (1u << 13)
 #define CAP_MOUNT        (1u << 14)
+#define CAP_MLFQ_QUERY   (1u << 15)
+#define CAP_YIELD        (1u << 16)
+#define CAP_SET_TIER     (1u << 17)
+#define CAP_SANDBOX      (1u << 18)
+#define CAP_SANDBOX_QUERY (1u << 19)
 
 #define CAP_ALL 0xFFFFFFFFu
 
@@ -27,9 +32,11 @@
 /* USER 任务默认基础集：可读写/IO/生命周期查询，无特权操作 */
 #define CAP_USER_DEFAULT                                                    \
         (CAP_WRITE | CAP_READ | CAP_GETCHAR | CAP_PUTCHAR | CAP_CLEAR |     \
-         CAP_EXIT | CAP_FORK | CAP_EXEC | CAP_WAIT | CAP_TIER_QUERY)
+         CAP_EXIT | CAP_FORK | CAP_EXEC | CAP_WAIT | CAP_TIER_QUERY |       \
+         CAP_MLFQ_QUERY | CAP_YIELD | CAP_SANDBOX_QUERY)
 
 #define CAP_PRIVILEGED                                                      \
-        (CAP_TIER_REQUEST | CAP_REBOOT | CAP_POWEROFF | CAP_KILL | CAP_MOUNT)
+        (CAP_TIER_REQUEST | CAP_REBOOT | CAP_POWEROFF | CAP_KILL | CAP_MOUNT | \
+         CAP_SET_TIER | CAP_SANDBOX)
 
 #endif

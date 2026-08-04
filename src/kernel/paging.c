@@ -10,8 +10,6 @@
 
 #define PAGE_SIZE 4096
 
-#define PHYS_MEM_SIZE (16 * 1024 * 1024)
-#define NUM_PAGES (PHYS_MEM_SIZE / PAGE_SIZE)
 #define PAGE_START_INDEX 1024
 
 int pressure_triggered = 0;
@@ -72,12 +70,6 @@ uint32_t alloc_page_frame(void)
                 if (idx < NUM_PAGES)
                 {
                         vm_page_array[idx].ref_count = 1;
-                }
-                if (phys < 0x400000)
-                {
-                        serial_write("[ALLOC LOW] phys=");
-                        serial_write_hex(phys);
-                        serial_write("\n");
                 }
                 return phys;
         }

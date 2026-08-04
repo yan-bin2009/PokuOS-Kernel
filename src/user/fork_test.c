@@ -17,10 +17,12 @@ static void print_hex(unsigned int v)
         sys_write(p);
 }
 
-void _start(void)
+int main(int argc, char *argv[])
 {
         int pid;
 
+        (void)argc;
+        (void)argv;
         sys_write("fork_test: about to fork\n");
         pid = sys_fork();
 
@@ -28,7 +30,7 @@ void _start(void)
         {
                 sys_write("fork_test: child running\n");
                 sys_write("fork_test: child exiting with code 7\n");
-                sys_exit(7);
+                return 7;
         }
         else if (pid > 0)
         {
@@ -41,11 +43,11 @@ void _start(void)
                 sys_write("fork_test: parent wait st=0x");
                 print_hex((unsigned int)st);
                 sys_write("\n");
-                sys_exit(0);
+                return 0;
         }
         else
         {
                 sys_write("fork_test: fork failed\n");
-                sys_exit(1);
+                return 1;
         }
 }

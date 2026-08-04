@@ -11,6 +11,8 @@
 #include <kernel/heap.h>
 #include <kernel/idt.h>
 #include <kernel/kstring.h>
+#include <kernel/locks.h>
+#include <kernel/locks_test.h>
 #include <kernel/multiboot.h>
 #include <kernel/paging.h>
 #include <kernel/process.h>
@@ -107,6 +109,10 @@ void kernel_main(void)
         keybord_init();
         syscall_init();
         vm_init();
+
+        /* 初始化全局锁，验证优先级继承 */
+        locks_init();
+        locks_test_run();
         __asm__ volatile("cli");
 
         if (magic == MULTIBOOT_BOOTLOADER_MAGIC && addr)

@@ -1,7 +1,9 @@
 #include "lib/syscall.h"
 
-void _start(void)
+int main(int argc, char *argv[])
 {
+        (void)argc;
+        (void)argv;
         sys_write("hello from hello.elf\n");
-        sys_exit(3);
+        return 3;
 }

@@ -196,6 +196,8 @@ void keybord_handler(void *frame)
                                 c = shift_symbols[c - '1'];
                         else if (c == '0')
                                 c = ')';
+                        else if (c == '-')
+                                c = '_';
                 }
                 push_to_buffer(c);
         }

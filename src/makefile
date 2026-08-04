@@ -14,13 +14,10 @@ KOBJS = bin/boot.o bin/switch_to.o bin/syscall_entry.o bin/pit_entry.o \
 	bin/keybord_entry.o bin/user-mod.o bin/tss.o
 OBJS = $(KOBJS) $(COBJS)
 
-all: kernel.bin initrd.img
-
-disk.img:
-	printf 'POKUOS-TEST-DISK' | dd of=disk.img bs=512 count=1 conv=notrunc
-	dd if=/dev/zero of=disk.img bs=512 count=8192 seek=1 conv=notrunc
+all: kernel.bin initrd.img disk.img
 
 run: iso disk.img
+	-pkill -9 -f qemu-system-i386 2>/dev/null; sleep 0.3
 	$(QEMU) -cdrom pokuos.iso -drive file=disk.img,format=raw,if=ide -no-reboot
 
 kernel.bin: $(OBJS)
@@ -65,7 +62,7 @@ bin/%.o: fs/%.c | bin
 bin:
 	mkdir -p bin
 
-user/shell.elf:
+user-build: FORCE
 	$(MAKE) -C user
 
 initrd.img: motd
@@ -74,9 +71,9 @@ initrd.img: motd
 big.txt:
 	head -c 32768 /dev/zero | tr '\0' 'A' > big.txt
 
-disk.img: user/shell.elf big.txt
+disk.img: user-build big.txt
 	dd if=/dev/zero of=disk.img bs=512 count=8192
-	tar --format=ustar -cf - -C user shell.elf forktest.elf hello.elf -C .. big.txt | dd of=disk.img conv=notrunc
+	tar --format=ustar -cf - -C user `cd user && echo *.elf` -C .. big.txt | dd of=disk.img conv=notrunc
 
 iso: kernel.bin initrd.img
 	rm -rf iso
@@ -97,4 +94,5 @@ format-check:
 format:
 	./tools/check-format.sh --fix
 
-.PHONY: all run iso clean format-check format
+.PHONY: all run iso clean format-check format FORCE user-build
+FORCE:

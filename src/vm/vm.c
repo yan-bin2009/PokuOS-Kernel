@@ -133,7 +133,6 @@ int vm_fault_cow(struct vm_map *map, uint32_t vaddr)
         uint32_t old_phys;
         uint32_t new_phys;
         struct vm_page *old_pg;
-        static uint32_t cow_count;
 
         if (!map)
                 return -1;
@@ -165,18 +164,6 @@ int vm_fault_cow(struct vm_map *map, uint32_t vaddr)
         free_page_frame(old_phys);
         pt[pt_idx] = new_phys | (pte & 0xFFF) | PTE_RW;
         __asm__ volatile("invlpg (%0)" : : "r"(vaddr) : "memory");
-        cow_count++;
-        serial_write("COW #");
-        serial_write_hex(cow_count);
-        serial_write(" at ");
-        serial_write_hex(vaddr);
-        serial_write(" old=");
-        serial_write_hex(old_phys);
-        serial_write(" new=");
-        serial_write_hex(new_phys);
-        serial_write(" pt=");
-        serial_write_hex(pt[pt_idx]);
-        serial_write("\n");
         return 0;
 }
 

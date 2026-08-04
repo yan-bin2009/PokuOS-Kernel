@@ -7,15 +7,28 @@
 #include <kernel/task.h>
 #include <kernel/tier.h>
 #include <kernel/watchdog.h>
+#include <kernel/sandbox.h>
 #include <user/tss.h>
 #include <stddef.h>
 
 extern task_t *current_task;
 extern void switch_to(task_t *prev, task_t *next);
 
-static int tier_timeslice(tier_t tier)
+#define MLFQ_AGING_TICKS 300   /* 每 300 tick(3s) 对降级任务提升一级 */
+#define MLFQ_DEMOTE_TICKS 3    /* 连续运行(不让出) 3 tick 即降一级 */
+
+static inline int clamp_level(int l)
 {
-        switch (tier)
+        if (l < 0)
+                return 0;
+        if (l > 2)
+                return 2;
+        return l;
+}
+
+static int tier_timeslice(task_t *t)
+{
+        switch (t->tier)
         {
         case TIER_KERNEL:
                 return 1;   /* 10ms */
@@ -24,14 +37,15 @@ static int tier_timeslice(tier_t tier)
         case TIER_CRITICAL:
                 return 2;
         case TIER_USER:
-                return 3;   /* 30ms */
+                /* MLFQ：级别越高（队列越深）时间片越短 */
+                return 3 - clamp_level(t->mlfq_level);
         }
         return 3;
 }
 
 static void set_task_timeslice(task_t *t)
 {
-        t->timeslice = tier_timeslice(t->tier);
+        t->timeslice = tier_timeslice(t);
 }
 
 void sched_init(void)
@@ -129,8 +143,23 @@ void schedule(void)
                         cand = idle_ref();
                 if (cand == prev)
                 {
-                        set_task_timeslice(prev);
-                        return;
+                        /* 自环：更高队列只剩自己（如空闲 shell 自旋）。若低队列有
+                         * 就绪任务则让出一个时间片，避免 USER 级任务被饿死。
+                         * pick_next_task 已把 prev 移出队（单任务时清空该队列），
+                         * 切给 lower 前必须把 prev 放回队尾，否则它会从就绪
+                         * 队列永久丢失。 */
+                        task_t *lower = pick_next_lower(prev_q + 1);
+
+                        if (lower)
+                        {
+                                cand = lower;
+                                enqueue_task(prev);
+                        }
+                        else
+                        {
+                                set_task_timeslice(prev);
+                                return;
+                        }
                 }
                 switch_to_task(prev, cand);
                 return;
@@ -146,8 +175,47 @@ void __attribute__((interrupt)) pit_handler(void *frame)
         (void)frame;
         outb(0x20, 0x20);
         tick_count++;
+
+        /* SYS_KILL 标记：当前任务下次运行时自杀（释放自己地址空间） */
+        if (current_task && current_task->kill_pending)
+        {
+                current_task->kill_pending = 0;
+                task_exit(-9);
+        }
+
+        /* CPU 配额记账：当前任务每 tick 记一，达额则本周期不再被调度 */
+        if (current_task && current_task->cpu_quota > 0)
+        {
+                uint32_t limit =
+                        QUOTA_PERIOD_TICKS * current_task->cpu_quota / 100;
+
+                if (limit == 0)
+                        limit = 1;
+                current_task->quota_used_ticks++;
+                if (current_task->quota_used_ticks >= limit)
+                        current_task->quota_done = 1;
+        }
+
+        /* MLFQ：USER 任务连续运行（不让出）累计够即降级，越用越深 */
+        if (current_task && current_task->tier == TIER_USER &&
+            !current_task->quota_done)
+        {
+                current_task->mlfq_cont_ticks++;
+                if (current_task->mlfq_cont_ticks >= MLFQ_DEMOTE_TICKS &&
+                    current_task->mlfq_level < 2)
+                {
+                        task_set_mlfq_level(current_task,
+                                            current_task->mlfq_level + 1);
+                        current_task->mlfq_cont_ticks = 0;
+                }
+        }
+
         if ((tick_count % 50) == 0)
                 watchdog_tick();
+        if ((tick_count % MLFQ_AGING_TICKS) == 0)
+                task_mlfq_aging();
+        if ((tick_count % QUOTA_PERIOD_TICKS) == 0)
+                task_quota_period_reset();
         schedule();
 }
 

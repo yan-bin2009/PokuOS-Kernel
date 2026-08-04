@@ -44,6 +44,7 @@ typedef struct task {
         int in_use;
         /* MLFQ：USER 子队列级别 0..2 */
         int mlfq_level;
+        int mlfq_cont_ticks;    /* 自上次让出以来连续运行 tick，用于降级 */
         /* 沙盒 */
         uint32_t caps;
         uint64_t mem_limit;        /* 字节，0 = 无限制 */
@@ -53,8 +54,14 @@ typedef struct task {
         uint32_t pages_charged;    /* 当前已记账用户页数（mem_limit 用） */
         uint32_t quota_used_ticks; /* 当前周期已用 tick（cpu_quota 用） */
         int quota_done;            /* 本周期配额耗尽，跳过调度 */
+        int kill_pending;          /* 下次运行时自杀（SYS_KILL 标记） */
+        int flags;                 /* TASK_INHERITED 等 */
+        int saved_tier;            /* 优先级继承前等级 */
         int wd_managed;            /* 是否由 watchdog 管理（其槽位由 watchdog 回收） */
 } task_t;
+
+/* task flags */
+#define TASK_INHERITED 0x1u      /* 当前因优先级继承而提升等级 */
 
 extern task_t *current_task;
 
@@ -69,12 +76,14 @@ void enqueue_task(task_t *t);
 void dequeue_task(task_t *t);
 task_t *pick_next_task(void);
 task_t *peek_next_task(void);
+task_t *pick_next_lower(int min_q);
 void task_set_tier(task_t *t, tier_t tier);
 void task_exit(int code);
 void task_set_mlfq_level(task_t *t, int level);
 void free_task_slot(task_t *t);
 task_t *create_task_slot(void);
 void task_quota_period_reset(void);
+void task_mlfq_aging(void);
 void task_reap_orphans(void);
 int task_qidx(task_t *t);
 task_t *task_find_child(task_t *parent, int pid);

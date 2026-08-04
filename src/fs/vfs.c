@@ -3,11 +3,28 @@
 #include <fs/vfs.h>
 #include <kernel/heap.h>
 #include <kernel/kstring.h>
+#include <kernel/serial.h>
+#include <kernel/task.h>
 #include <stddef.h>
 
 struct dentry *vfs_root;
 
 static uint32_t vfs_ino_next = 1;
+
+/* 简化 chroot 检查：path 必须以 root 为目录边界前缀 */
+static int is_path_allowed(const char *path, const char *root)
+{
+        size_t root_len;
+
+        if (!root || !*root)
+                return 1;
+        root_len = strlen(root);
+        if (strncmp(path, root, root_len) != 0)
+                return 0;
+        if (path[root_len] != '\0' && path[root_len] != '/')
+                return 0;
+        return 1;
+}
 
 struct inode *vfs_new_inode(uint32_t mode)
 {
@@ -165,10 +182,27 @@ static struct dentry *vfs_lookup_from(struct dentry *base, const char *path)
 struct dentry *vfs_lookup(const char *path)
 {
         struct super_block *sb;
+        struct task *cur;
         const char *rest;
 
-        if (!path || !vfs_root)
+        if (!path || !*path || !vfs_root)
                 return NULL;
+
+        cur = get_current_task();
+        if (cur && cur->root_path[0] != '\0' && strcmp(cur->root_path, "/") != 0)
+        {
+                if (path[0] != '/')
+                        return NULL;
+                if (!is_path_allowed(path, cur->root_path))
+                {
+                        serial_write("[VFS] path denied:");
+                        serial_write(path);
+                        serial_write("(root=");
+                        serial_write(cur->root_path);
+                        serial_write(")\n");
+                        return NULL;
+                }
+        }
 
         sb = vfs_find_mount(path, &rest);
         if (sb && sb->s_root)

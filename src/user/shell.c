@@ -1,3 +1,4 @@
+#include "lib/errno.h"
 #include "lib/syscall.h"
 #include <driver/keybord.h>
 
@@ -65,7 +66,7 @@ static int split(char *cmd, char *argv[], int max)
         return n;
 }
 
-void _start(void)
+int main(int argc, char *argv[])
 {
         static char history[HIST_MAX][CMD_MAX];
         static int hist_count = 0;
@@ -204,6 +205,14 @@ void _start(void)
                                 sys_putchar('0' + t);
                                 sys_write("\n");
                         }
+                        else if (strcmp(argv[0], "mlfq") == 0)
+                        {
+                                int lv = sys_mlfq_query();
+
+                                sys_write("mlfq=");
+                                sys_putchar('0' + lv);
+                                sys_write("\n");
+                        }
                         else if (strcmp(argv[0], "exit") == 0)
                         {
                                 sys_write("bye\n");
@@ -235,6 +244,8 @@ void _start(void)
                                 {
                                         int r;
 
+                                        if (n < 4)
+                                                argv[n] = 0;
                                         if (argv[0][0] == '/')
                                         {
                                                 int i;
@@ -254,13 +265,30 @@ void _start(void)
                                                 path[i] = '\0';
                                         }
 
-                                        r = sys_exec(path);
-
-                                        sys_write("exec failed (");
-                                        sys_write(path);
-                                        sys_write(") ret=");
-                                        print_hex((unsigned int)r);
-                                        sys_write("\n");
+                                        r = sys_exec(path, argv);
+                                        if (r != 0)
+                                        {
+                                                switch (r)
+                                                {
+                                                case -ENOENT:
+                                                        sys_write("error: command not found\n");
+                                                        break;
+                                                case -ENOEXEC:
+                                                        sys_write("error: not an executable\n");
+                                                        break;
+                                                case -ENOMEM:
+                                                        sys_write("error: out of memory\n");
+                                                        break;
+                                                case -EACCES:
+                                                        sys_write("error: permission denied\n");
+                                                        break;
+                                                default:
+                                                        sys_write("error: exec failed (");
+                                                        sys_write(path);
+                                                        sys_write(")\n");
+                                                        break;
+                                                }
+                                        }
                                         sys_exit(1);
                                 }
                                 else if (pid > 0)

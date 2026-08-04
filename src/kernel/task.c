@@ -108,6 +108,33 @@ task_t *pick_next_task(void)
                 if (!rq_head[q])
                         continue;
                 t = rq_head[q];
+
+                /* 配额耗尽任务不选中：移到队尾，看本队列后续任务 */
+                if (t->quota_done)
+                {
+                        int found = 0;
+                        task_t *probe;
+
+                        for (probe = t; probe; probe = probe->next)
+                        {
+                                if (!probe->quota_done)
+                                {
+                                        found = 1;
+                                        break;
+                                }
+                        }
+                        if (!found)
+                                continue;
+                        while (t->quota_done)
+                        {
+                                rq_head[q] = t->next;
+                                rq_tail[q]->next = t;
+                                rq_tail[q] = t;
+                                t->next = NULL;
+                                t = rq_head[q];
+                        }
+                }
+
                 if (t->next)
                 {
                         rq_head[q] = t->next;
@@ -131,8 +158,69 @@ task_t *peek_next_task(void)
 
         for (q = 0; q < NR_QUEUES; q++)
         {
-                if (rq_head[q])
-                        return rq_head[q];
+                task_t *t;
+
+                if (!rq_head[q])
+                        continue;
+                for (t = rq_head[q]; t; t = t->next)
+                {
+                        if (!t->quota_done)
+                                return t;
+                }
+        }
+        return NULL;
+}
+
+task_t *pick_next_lower(int min_q)
+{
+        int q;
+
+        for (q = min_q; q < NR_QUEUES; q++)
+        {
+                task_t *t;
+
+                if (!rq_head[q])
+                        continue;
+                t = rq_head[q];
+
+                if (t->quota_done)
+                {
+                        int found = 0;
+                        task_t *probe;
+
+                        for (probe = t; probe; probe = probe->next)
+                        {
+                                if (!probe->quota_done)
+                                {
+                                        found = 1;
+                                        break;
+                                }
+                        }
+                        if (!found)
+                                continue;
+                        while (t->quota_done)
+                        {
+                                rq_head[q] = t->next;
+                                rq_tail[q]->next = t;
+                                rq_tail[q] = t;
+                                t->next = NULL;
+                                t = rq_head[q];
+                        }
+                }
+
+                if (t->next)
+                {
+                        rq_head[q] = t->next;
+                        rq_tail[q]->next = t;
+                        rq_tail[q] = t;
+                        t->next = NULL;
+                }
+                else
+                {
+                        rq_head[q] = NULL;
+                        rq_tail[q] = NULL;
+                }
+                return t;
         }
         return NULL;
 }
@@ -203,6 +291,7 @@ task_t *create_task(task_func_t func, int priority)
         t->next = NULL;
         t->map = NULL;
         t->mlfq_level = 0;
+        t->mlfq_cont_ticks = 0;
         t->caps = CAP_USER_DEFAULT;
         t->mem_limit = 0;
         t->cpu_quota = 0;
@@ -232,7 +321,15 @@ void task_set_tier(task_t *t, tier_t tier)
                 return;
         oldq = task_qidx(t);
         if (tier == TIER_USER)
-                newq = 2 + (t->mlfq_level < 0 ? 0 : t->mlfq_level);
+        {
+                int level = t->mlfq_level;
+
+                if (level < 0)
+                        level = 0;
+                if (level > 2)
+                        level = 2;
+                newq = 2 + level;
+        }
         else
                 newq = tier_to_queue_idx(tier);
         if (oldq != newq && t->state == TASK_READY && t != current_task)
@@ -306,17 +403,12 @@ void task_reap_orphans(void)
         for (i = 0; i < MAX_TASKS; i++)
         {
                 task_t *t = &tasks[i];
-                int pid;
 
                 if (!t->in_use || t->state != TASK_EXITED)
                         continue;
                 if (t->parent != NULL || t->wd_managed)
                         continue;
-                pid = t->pid;
                 free_task_slot(t);
-                serial_write("[reap] orphan pid=");
-                serial_write_hex(pid);
-                serial_write(" slot freed\n");
         }
 }
 
@@ -360,8 +452,30 @@ void yield(void)
 {
         if (!current_task)
                 return;
+        /* 主动让出 CPU 视为交互行为，提升回最高 MLFQ 级别 */
+        if (current_task->tier == TIER_USER)
+        {
+                current_task->mlfq_cont_ticks = 0;
+                if (current_task->mlfq_level > 0)
+                        task_set_mlfq_level(current_task, 0);
+        }
         current_task->state = TASK_READY;
         schedule();
+}
+
+void task_mlfq_aging(void)
+{
+        int i;
+
+        for (i = 0; i < MAX_TASKS; i++)
+        {
+                if (tasks[i].in_use && tasks[i].tier == TIER_USER &&
+                    tasks[i].mlfq_level > 0 && !tasks[i].quota_done &&
+                    (tasks[i].state == TASK_READY ||
+                     tasks[i].state == TASK_RUNNING))
+                        task_set_mlfq_level(&tasks[i],
+                                            tasks[i].mlfq_level - 1);
+        }
 }
 
 task_t *get_current_task(void)
@@ -386,10 +500,12 @@ void task_exit(int code)
         if (p && p->state == TASK_WAITING)
         {
                 p->state = TASK_READY;
+                if (p->tier == TIER_USER)
+                {
+                        p->mlfq_cont_ticks = 0;
+                        p->mlfq_level = 0;
+                }
                 enqueue_task(p);
-                serial_write("[exit] wake parent pid=");
-                serial_write_hex(p->pid);
-                serial_write("\n");
         }
 
         /* 孤儿重挂到 NULL，由空闲循环的 reaper 回收 */
@@ -398,6 +514,10 @@ void task_exit(int code)
                 if (tasks[i].in_use && tasks[i].parent == t)
                         tasks[i].parent = NULL;
         }
+
+        /* 若因优先级继承提升等级，在退出前清标志防泄露给其它锁持有者 */
+        t->flags &= ~TASK_INHERITED;
+        t->saved_tier = TIER_USER;
 
         /* 释放地址空间（当前 cr3 即本任务 PD） */
         free_task_address_space(t);
