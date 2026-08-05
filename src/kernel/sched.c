@@ -2,20 +2,20 @@
 #include <kernel/idt.h>
 #include <kernel/paging.h>
 #include <kernel/ports.h>
+#include <kernel/sandbox.h>
 #include <kernel/sched.h>
 #include <kernel/serial.h>
 #include <kernel/task.h>
 #include <kernel/tier.h>
 #include <kernel/watchdog.h>
-#include <kernel/sandbox.h>
-#include <user/tss.h>
 #include <stddef.h>
+#include <user/tss.h>
 
 extern task_t *current_task;
 extern void switch_to(task_t *prev, task_t *next);
 
-#define MLFQ_AGING_TICKS 300   /* 每 300 tick(3s) 对降级任务提升一级 */
-#define MLFQ_DEMOTE_TICKS 3    /* 连续运行(不让出) 3 tick 即降一级 */
+#define MLFQ_AGING_TICKS 300 /* 每 300 tick(3s) 对降级任务提升一级 */
+#define MLFQ_DEMOTE_TICKS 3  /* 连续运行(不让出) 3 tick 即降一级 */
 
 static inline int clamp_level(int l)
 {
@@ -31,9 +31,9 @@ static int tier_timeslice(task_t *t)
         switch (t->tier)
         {
         case TIER_KERNEL:
-                return 1;   /* 10ms */
+                return 1; /* 10ms */
         case TIER_SYSTEM:
-                return 2;   /* 20ms */
+                return 2; /* 20ms */
         case TIER_CRITICAL:
                 return 2;
         case TIER_USER:
@@ -102,7 +102,11 @@ void schedule(void)
 
         if (prev->state == TASK_WAITING)
         {
-                /* 阻塞任务（wait 等）不再入队，切走等待唤醒 */
+                /* 阻塞任务（wait 等）不再入队，切走等待唤醒；
+                 * 主动出队：否则 WAITING 任务仍留在就绪队列，会被
+                 * pick_next_task 重新选中，且 mutex 等待链表复用 next
+                 * 会破坏就绪链表。dequeue 对不在队中的任务是安全的空操作。 */
+                dequeue_task(prev);
                 cand = pick_next_task();
                 if (!cand)
                         cand = idle_ref();
@@ -187,7 +191,7 @@ void __attribute__((interrupt)) pit_handler(void *frame)
         if (current_task && current_task->cpu_quota > 0)
         {
                 uint32_t limit =
-                        QUOTA_PERIOD_TICKS * current_task->cpu_quota / 100;
+                    QUOTA_PERIOD_TICKS * current_task->cpu_quota / 100;
 
                 if (limit == 0)
                         limit = 1;

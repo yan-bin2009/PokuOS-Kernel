@@ -112,8 +112,21 @@ static void task_root_path(task_t *t, const char *src)
         }
 }
 
+/* child 路径必须是 parent 前缀路径的子路径（等于或位于其下） */
+static int path_is_within(const char *child, const char *parent)
+{
+        size_t plen;
+
+        if (!child || !parent)
+                return 0;
+        plen = strlen(parent);
+        if (strncmp(child, parent, plen) != 0)
+                return 0;
+        return child[plen] == '\0' || child[plen] == '/';
+}
+
 /* 将 chroot 前缀应用到路径 */
-static void resolve_path(task_t *t, const char *path, char *buf, int buflen)
+void resolve_path(task_t *t, const char *path, char *buf, int buflen)
 {
         size_t rlen;
         size_t plen;
@@ -217,9 +230,20 @@ int sys_fork(struct pt_regs *regs, const struct fork_sandbox_config *sb)
         child->map = NULL;
         child->wd_managed = 0;
 
-        /* 沙盒继承/覆盖 */
+        /* 沙盒继承/覆盖：受限父只能产生同等或更受限的子进程，
+         * 不允许通过 fork_with_sandbox 扩大 root_path / 等级 / 配额。 */
         if (sb && sb->tier_override)
         {
+                if (sb->tier_override < 0 || sb->tier_override > TIER_CRITICAL)
+                {
+                        free_task_slot(child);
+                        return -EINVAL;
+                }
+                if (!(parent->caps & CAP_SET_TIER))
+                {
+                        free_task_slot(child);
+                        return -EPERM;
+                }
                 child->tier_override = sb->tier_override;
                 child->tier = (tier_t)sb->tier_override;
         }
@@ -230,14 +254,49 @@ int sys_fork(struct pt_regs *regs, const struct fork_sandbox_config *sb)
         }
         child->caps = (sb && sb->caps_allow) ? (parent->caps & sb->caps_allow)
                                              : parent->caps;
-        child->mem_limit = (sb && sb->mem_limit) ? sb->mem_limit
-                                                 : parent->mem_limit;
-        child->cpu_quota = (sb && sb->cpu_quota) ? sb->cpu_quota
-                                                 : parent->cpu_quota;
-        if (sb && sb->root_path)
-                task_root_path(child, sb->root_path);
+        if (sb && sb->mem_limit)
+        {
+                child->mem_limit = sb->mem_limit;
+                if (parent->mem_limit && child->mem_limit > parent->mem_limit)
+                        child->mem_limit = parent->mem_limit;
+        }
         else
+        {
+                child->mem_limit = parent->mem_limit;
+        }
+        if (sb && sb->cpu_quota)
+        {
+                child->cpu_quota = (sb->cpu_quota > 100) ? 100 : sb->cpu_quota;
+                if (parent->cpu_quota && child->cpu_quota > parent->cpu_quota)
+                        child->cpu_quota = parent->cpu_quota;
+        }
+        else
+        {
+                child->cpu_quota = parent->cpu_quota;
+        }
+        if (sb && sb->root_path)
+        {
+                char sub_root[64];
+
+                memset(sub_root, 0, sizeof(sub_root));
+                if (copy_user_string((uint32_t)sb->root_path, sub_root,
+                                     sizeof(sub_root)) != 0)
+                {
+                        free_task_slot(child);
+                        return -EINVAL;
+                }
+                if (parent->root_path[0] != '\0' &&
+                    !path_is_within(sub_root, parent->root_path))
+                {
+                        free_task_slot(child);
+                        return -EPERM;
+                }
+                strcpy(child->root_path, sub_root);
+        }
+        else
+        {
                 strcpy(child->root_path, parent->root_path);
+        }
 
         limit_pages = child->mem_limit ? (uint32_t)(child->mem_limit / 4096) : 0;
         if (limit_pages && npages > limit_pages)
@@ -576,12 +635,14 @@ task_t *spawn_user_process(const char *path)
         if (t->map)
                 vm_protect_readonly(t->map);
 
+        /* cr3 仍指向 task_pd，统计新地址空间的用户页数 */
+        t->pages_charged = count_user_pages();
+
         load_cr3(old_cr3);
 
         t->cr3 = task_pd;
         t->user_entry = entry;
         t->user_stack = USER_STACK_VIRT + 4096 - 8;
-        t->pages_charged = count_user_pages();
 
         assigned = elf_assign_tier(path);
         t->tier = assigned;

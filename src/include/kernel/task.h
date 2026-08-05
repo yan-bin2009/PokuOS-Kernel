@@ -6,6 +6,10 @@
 #include <kernel/caps.h>
 #include <kernel/tier.h>
 
+#define FD_MAX 8
+
+struct file;
+
 #define TASK_RUNNING  0
 #define TASK_READY    1
 #define TASK_WAITING  2
@@ -58,6 +62,7 @@ typedef struct task {
         int flags;                 /* TASK_INHERITED 等 */
         int saved_tier;            /* 优先级继承前等级 */
         int wd_managed;            /* 是否由 watchdog 管理（其槽位由 watchdog 回收） */
+        struct file *fd_table[FD_MAX]; /* 文件描述符表；0=stdin 1=stdout 2=stderr */
 } task_t;
 
 /* task flags */

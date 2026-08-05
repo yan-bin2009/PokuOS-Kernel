@@ -29,13 +29,16 @@ static struct free_block *free_list;
 static uintptr_t heap_brk = HEAP_VIRT_START;
 static uintptr_t heap_end = HEAP_VIRT_START;
 
-static void expand_heap(uintptr_t vaddr)
+static size_t *block_footer(struct block_header *block);
+
+static int expand_heap(uintptr_t vaddr)
 {
         uint32_t phys = alloc_page_frame();
 
         if (!phys)
-                return;
+                return -1;
         map_page((void *)vaddr, (void *)phys, PTE_PRESENT | PTE_RW);
+        return 0;
 }
 
 void heap_init(void)
@@ -48,6 +51,8 @@ void heap_init(void)
         free_list = (struct free_block *)HEAP_VIRT_START;
         free_list->header.size = (HEAP_INIT_PAGES * PAGE_SIZE) | BLOCK_FLAG_FREE;
         free_list->next = NULL;
+        *block_footer((struct block_header *)free_list) =
+            HEAP_INIT_PAGES * PAGE_SIZE;
 
         heap_brk += HEAP_INIT_PAGES * PAGE_SIZE;
         heap_end = heap_brk;
@@ -122,6 +127,62 @@ static void remove_free(struct free_block *block)
         }
 }
 
+static int grow_heap(size_t need_bytes)
+{
+        struct block_header *prev;
+        size_t prev_size;
+        size_t pages;
+        size_t i;
+
+        if (need_bytes == 0)
+                return -1;
+        if (heap_brk >= 0xFE000000)
+                return -1;
+
+        pages = (need_bytes + PAGE_SIZE - 1) / PAGE_SIZE;
+
+        for (i = 0; i < pages; i++)
+        {
+                if (expand_heap(heap_brk + i * PAGE_SIZE) != 0)
+                        return -1;
+        }
+
+        /* 若前一块 free，合并扩展区，保持 free list 连续 */
+        if (heap_brk > HEAP_VIRT_START)
+        {
+                prev_size = *(size_t *)((uintptr_t)heap_brk - sizeof(size_t));
+                prev = (struct block_header *)((uintptr_t)heap_brk - prev_size);
+                if (block_in_heap(prev) &&
+                    (uintptr_t)prev + prev_size == (uintptr_t)heap_brk &&
+                    block_is_free(prev))
+                {
+                        remove_free((struct free_block *)prev);
+                        prev->size = (prev_size + pages * PAGE_SIZE) |
+                                     BLOCK_FLAG_FREE |
+                                     (prev->size & BLOCK_FLAG_PREV_FREE);
+                        heap_brk += pages * PAGE_SIZE;
+                        heap_end = heap_brk;
+                        *block_footer(prev) = block_size(prev);
+                        ((struct free_block *)prev)->next = NULL;
+                        insert_free((struct free_block *)prev);
+                        return 0;
+                }
+        }
+
+        {
+                struct block_header *newblock;
+
+                newblock = (struct block_header *)heap_brk;
+                newblock->size = (pages * PAGE_SIZE) | BLOCK_FLAG_FREE;
+                *block_footer(newblock) = pages * PAGE_SIZE;
+                ((struct free_block *)newblock)->next = NULL;
+                heap_brk += pages * PAGE_SIZE;
+                heap_end = heap_brk;
+                insert_free((struct free_block *)newblock);
+        }
+        return 0;
+}
+
 void *kmalloc(size_t size)
 {
         struct free_block *fb;
@@ -143,7 +204,17 @@ void *kmalloc(size_t size)
                         break;
         }
         if (!fb)
-                return NULL;
+        {
+                if (grow_heap(total_size) != 0)
+                        return NULL;
+                for (fb = free_list; fb; fb = fb->next)
+                {
+                        if (block_size(&fb->header) >= total_size)
+                                break;
+                }
+                if (!fb)
+                        return NULL;
+        }
 
         block = &fb->header;
         remove_free(fb);

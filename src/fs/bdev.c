@@ -12,6 +12,7 @@ struct deferred_write
 {
         uint64_t lba;
         uint8_t data[512];
+        tier_t tier;
         struct deferred_write *next;
 };
 
@@ -56,13 +57,13 @@ int bdev_write_deferred(struct block_device *dev, uint64_t lba,
         struct deferred_write *entry;
 
         (void)dev;
-        (void)tier;
 
         entry = kmalloc(sizeof(struct deferred_write));
         if (!entry)
                 return -1;
 
         entry->lba = lba;
+        entry->tier = tier;
         memcpy(entry->data, buf, 512);
         entry->next = write_pool;
         write_pool = entry;
@@ -75,14 +76,19 @@ int bdev_flush(struct block_device *dev)
         struct deferred_write *entry;
         int ret;
 
-        (void)dev;
+        if (!dev || !dev->write)
+                return -1;
 
         ret = 0;
         while (write_pool)
         {
                 entry = write_pool;
                 write_pool = entry->next;
-                /* TODO: 真正写入磁盘 */
+                if (dev->write(dev, entry->lba, entry->data, 1,
+                               entry->tier) != 0)
+                {
+                        ret = -1;
+                }
                 kfree(entry);
         }
 

@@ -8,6 +8,7 @@
 #define ENOEXEC 8
 #define ENOMEM  12
 #define EACCES  13
+#define ENOTDIR 20
 #define EINVAL  22
 
 #endif

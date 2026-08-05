@@ -11,7 +11,8 @@
 #define WD_BACKOFF_BASE 5
 #define WD_UNSTABLE_TICKS 10
 
-struct wd_entry {
+struct wd_entry
+{
         char path[64];
         tier_t tier;
         task_t *task;
@@ -49,6 +50,8 @@ int watchdog_register(const char *path, tier_t tier, task_t *initial_task)
         e->spawn_due = 0;
         e->active = 1;
         e->spawn_tick = wd_tick;
+        if (initial_task)
+                initial_task->wd_managed = 1;
         return 0;
 }
 
@@ -89,6 +92,9 @@ void watchdog_tick(void)
                                 serial_write("[WD] give up (unstable): ");
                                 serial_write(e->path);
                                 serial_write("\n");
+                                if (t)
+                                        free_task_slot(t);
+                                e->task = NULL;
                                 e->active = 0;
                                 continue;
                         }
@@ -98,6 +104,9 @@ void watchdog_tick(void)
                                 serial_write("[WD] give up (max restarts): ");
                                 serial_write(e->path);
                                 serial_write("\n");
+                                if (t)
+                                        free_task_slot(t);
+                                e->task = NULL;
                                 e->active = 0;
                                 continue;
                         }
@@ -109,6 +118,8 @@ void watchdog_tick(void)
                         serial_write_hex(WD_BACKOFF_BASE << (e->restarts - 1));
                         serial_write("\n");
                         e->delay_ticks = WD_BACKOFF_BASE << (e->restarts - 1);
+                        if (t)
+                                free_task_slot(t);
                         e->task = NULL;
                         continue;
                 }
@@ -131,6 +142,7 @@ void watchdog_check(void)
                 e->task = spawn_user_process(e->path);
                 if (e->task)
                 {
+                        e->task->wd_managed = 1;
                         e->spawn_tick = wd_tick;
                         serial_write("[WD] spawned ");
                         serial_write(e->path);

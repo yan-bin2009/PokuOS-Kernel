@@ -1,0 +1,9 @@
+[build]
+target = "/home/lemon/PokuOS-Kernel/src/rust/i686-unknown-none.json"
+
+[target.i686-unknown-none]
+linker = "rust-lld"
+rustflags = [
+    "-C", "link-arg=-T", "-C", "link-arg=uname.ld",
+    "-C", "link-arg=-static",
+]

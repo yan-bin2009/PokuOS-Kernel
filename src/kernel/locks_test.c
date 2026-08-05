@@ -1,6 +1,6 @@
 #include <kernel/locks.h>
-#include <kernel/serial.h>
 #include <kernel/sched.h>
+#include <kernel/serial.h>
 #include <kernel/task.h>
 
 static struct mutex g_lock;
@@ -81,7 +81,7 @@ void locks_test_run(void)
         g_waiter = b;
 
         enqueue_task(a);
-        schedule();              /* 切到 holder: lock -> 唤醒 waiter -> yield */
+        schedule(); /* 切到 holder: lock -> 唤醒 waiter -> yield */
         /* waiter 在 holder 释放锁前被唤醒，触发优先级继承 */
         serial_write("[locks_test] spawned\n");
 }

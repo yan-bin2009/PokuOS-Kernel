@@ -1,7 +1,8 @@
 #include <driver/ata.h>
-#include <driver/keybord.h>
+#include <driver/keyboard.h>
 #include <driver/vga.h>
 #include <fs/bdev.h>
+#include <fs/memfs.h>
 #include <fs/mount.h>
 #include <fs/ramfs.h>
 #include <fs/tarfs.h>
@@ -93,7 +94,10 @@ void kernel_main(void)
         serial_init();
         serial_write("Kernel started\n");
 
-        paging_init(0x00100000, 0x01000000);
+        paging_init(0x00100000, 0x04000000);
+        serial_write("[mem] free pages=");
+        serial_write_hex(free_pages_count());
+        serial_write("\n");
         heap_init();
         heap_selftest();
         bdev_selftest();
@@ -106,7 +110,7 @@ void kernel_main(void)
         watchdog_init();
         sched_init();
         pit_init();
-        keybord_init();
+        keyboard_init();
         syscall_init();
         vm_init();
 
@@ -140,6 +144,13 @@ void kernel_main(void)
         tar_sb = tarfs_mount(bdev_lookup("ata0"));
         if (tar_sb)
                 vfs_mount("/mnt", tar_sb);
+
+        {
+                struct super_block *home_sb = memfs_mount();
+
+                if (home_sb)
+                        vfs_mount("/home", home_sb);
+        }
 
         if (vfs_root)
         {

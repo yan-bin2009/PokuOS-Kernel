@@ -1,5 +1,6 @@
-#include <driver/keybord.h>
+#include <driver/keyboard.h>
 #include <driver/vga.h>
+#include <fs/vfs.h>
 #include <kernel/caps.h>
 #include <kernel/errno.h>
 #include <kernel/kstring.h>
@@ -18,25 +19,29 @@ typedef int (*syscall_fn)(struct pt_regs *regs);
 
 /* 每个系统调用所需的能力位集合；0 表示 USER 也可直接调用 */
 static const uint32_t syscall_caps[] = {
-        [SYS_WRITE]          = CAP_WRITE,
-        [SYS_EXIT]           = CAP_EXIT,
-        [SYS_GETCHAR]        = CAP_GETCHAR,
-        [SYS_PUTCHAR]        = CAP_PUTCHAR,
-        [SYS_CLEAR]          = CAP_CLEAR,
-        [SYS_REBOOT]         = CAP_REBOOT,
-        [SYS_POWEROFF]       = CAP_POWEROFF,
-        [SYS_TIER_QUERY]     = CAP_TIER_QUERY,
-        [SYS_TIER_REQUEST]   = CAP_TIER_REQUEST,
-        [SYS_FORK]           = CAP_FORK,
-        [SYS_FORK_WITH_SANDBOX] = CAP_FORK,
-        [SYS_EXEC]           = CAP_EXEC,
-        [SYS_WAIT]           = CAP_WAIT,
-        [SYS_MLFQ_QUERY]     = CAP_MLFQ_QUERY,
-        [SYS_YIELD]          = CAP_YIELD,
-        [SYS_KILL]           = CAP_KILL,
-        [SYS_SET_TIER]       = CAP_SET_TIER,
-        [SYS_UNAME]          = 0,
-        [SYS_SANDBOX_QUERY]  = CAP_SANDBOX_QUERY,
+    [SYS_WRITE] = CAP_WRITE,
+    [SYS_OPEN] = CAP_READ,
+    [SYS_EXIT] = CAP_EXIT,
+    [SYS_GETCHAR] = CAP_GETCHAR,
+    [SYS_PUTCHAR] = CAP_PUTCHAR,
+    [SYS_CLEAR] = CAP_CLEAR,
+    [SYS_REBOOT] = CAP_REBOOT,
+    [SYS_POWEROFF] = CAP_POWEROFF,
+    [SYS_TIER_QUERY] = CAP_TIER_QUERY,
+    [SYS_TIER_REQUEST] = CAP_TIER_REQUEST,
+    [SYS_FORK] = CAP_FORK,
+    [SYS_FORK_WITH_SANDBOX] = CAP_FORK,
+    [SYS_EXEC] = CAP_EXEC,
+    [SYS_WAIT] = CAP_WAIT,
+    [SYS_MLFQ_QUERY] = CAP_MLFQ_QUERY,
+    [SYS_YIELD] = CAP_YIELD,
+    [SYS_READ] = CAP_READ,
+    [SYS_CLOSE] = CAP_READ,
+    [SYS_KILL] = CAP_KILL,
+    [SYS_SET_TIER] = CAP_SET_TIER,
+    [SYS_UNAME] = 0,
+    [SYS_LS] = CAP_READ,
+    [SYS_SANDBOX_QUERY] = CAP_SANDBOX_QUERY,
 };
 
 static void write_buf(const char *buf, uint32_t len)
@@ -195,12 +200,185 @@ static int sys_exec_from_user(struct pt_regs *regs, uint32_t path_ptr)
 
 /* ---- 系统调用实现 ---- */
 
-static int sys_write_fn(struct pt_regs *r)
+static int sys_write_fn(struct pt_regs *regs)
 {
-        if (!user_range_valid(r->ecx, r->edx))
+        task_t *cur;
+        int fd = regs->ebx;
+        const void *buf = (const void *)regs->ecx;
+        size_t len = (size_t)regs->edx;
+
+        if (fd == 1 || fd == 2)
+        {
+                if (!user_range_valid((uint32_t)buf, (uint32_t)len))
+                        return -EINVAL;
+                write_buf(buf, len);
+                return 0;
+        }
+
+        cur = get_current_task();
+        if (!cur || fd < 3 || fd >= FD_MAX || !cur->fd_table[fd])
+                return -EINVAL;
+        if (!user_range_valid((uint32_t)buf, (uint32_t)len))
+                return -EINVAL;
+        return vfs_write(cur->fd_table[fd], (const char *)buf, len);
+}
+
+/* 从用户态拷贝以 NUL 结尾的路径字符串到内核缓冲 */
+static int copy_user_path(uint32_t src, char *dst, uint32_t maxlen)
+{
+        uint32_t i;
+
+        if (src >= 0xC0000000)
                 return -1;
-        write_buf((const char *)r->ecx, r->edx);
-        return r->edx;
+        for (i = 0; i < maxlen - 1; i++)
+        {
+                uint32_t page = src + i;
+                uint32_t *pd = (uint32_t *)0xFFFFF000;
+                uint32_t *pt;
+                uint32_t pd_idx = page >> 22;
+                uint32_t pt_idx = (page >> 12) & 0x3FF;
+
+                if (!(pd[pd_idx] & PTE_PRESENT))
+                        return -1;
+                pt = (uint32_t *)(0xFFC00000 + (pd_idx << 12));
+                if (!(pt[pt_idx] & PTE_PRESENT) || !(pt[pt_idx] & PTE_USER))
+                        return -1;
+                dst[i] = *(char *)(src + i);
+                if (dst[i] == '\0')
+                        return 0;
+        }
+        dst[maxlen - 1] = '\0';
+        return 0;
+}
+
+static int sys_open_fn(struct pt_regs *r)
+{
+        task_t *cur;
+        char path[128];
+        char resolved[128];
+        struct file *f;
+        int fd;
+
+        cur = get_current_task();
+        if (!cur)
+                return -EINVAL;
+        if (copy_user_path(r->ebx, path, sizeof(path)) != 0)
+                return -EINVAL;
+
+        resolve_path(cur, path, resolved, sizeof(resolved));
+
+        f = vfs_open(resolved, r->ecx);
+        if (!f && (r->ecx & O_CREAT))
+                f = vfs_create(resolved, (r->edx & 0xFFFF) | S_IFREG);
+        if (!f)
+                return -ENOENT;
+
+        for (fd = 3; fd < FD_MAX; fd++)
+        {
+                if (!cur->fd_table[fd])
+                        break;
+        }
+        if (fd >= FD_MAX)
+        {
+                vfs_close(f);
+                return -ENOMEM;
+        }
+
+        cur->fd_table[fd] = f;
+        return fd;
+}
+
+static int sys_read_fn(struct pt_regs *r)
+{
+        task_t *cur;
+        int fd = (int)r->ebx;
+        void *buf = (void *)r->ecx;
+        size_t len = (size_t)r->edx;
+
+        cur = get_current_task();
+        if (!cur)
+                return -EINVAL;
+
+        if (fd == 0)
+        {
+                char c;
+
+                if (!user_range_valid((uint32_t)buf, 1))
+                        return -EINVAL;
+                c = getchar();
+                if (c == 0)
+                        return 0;
+                *(char *)buf = c;
+                return 1;
+        }
+
+        if (fd < 3 || fd >= FD_MAX || !cur->fd_table[fd])
+                return -EINVAL;
+        if (!user_range_valid((uint32_t)buf, (uint32_t)len))
+                return -EINVAL;
+        return vfs_read(cur->fd_table[fd], (char *)buf, len);
+}
+
+static int sys_close_fn(struct pt_regs *r)
+{
+        task_t *cur;
+        int fd = (int)r->ebx;
+        int ret;
+
+        cur = get_current_task();
+        if (!cur || fd < 3 || fd >= FD_MAX || !cur->fd_table[fd])
+                return -EINVAL;
+        ret = vfs_close(cur->fd_table[fd]);
+        cur->fd_table[fd] = NULL;
+        return ret;
+}
+
+/* 列出目录内容：每次调用返回 "name\n" 序列写入用户 buf，返回字节数 */
+static int sys_ls_fn(struct pt_regs *r)
+{
+        task_t *cur;
+        char path[128];
+        char resolved[128];
+        struct dentry *dentry;
+        struct inode *inode;
+        struct dentry *child;
+        uint32_t ubuf = (uint32_t)r->ecx;
+        uint32_t buflen = (uint32_t)r->edx;
+        uint32_t off = 0;
+
+        cur = get_current_task();
+        if (!cur)
+                return -EINVAL;
+        if (copy_user_path(r->ebx, path, sizeof(path)) != 0)
+                return -EINVAL;
+
+        resolve_path(cur, path, resolved, sizeof(resolved));
+
+        dentry = vfs_lookup(resolved);
+        if (!dentry)
+                return -ENOENT;
+        inode = dentry->d_inode;
+        if (!inode)
+                return -ENOENT;
+        if (!(inode->i_mode & S_IFDIR))
+                return -ENOTDIR;
+
+        for (child = inode->i_children; child; child = child->d_next)
+        {
+                uint32_t n = strlen(child->d_name);
+                uint32_t i;
+
+                if (off + n + 1 > buflen)
+                        break;
+                if (!user_range_valid(ubuf + off, n + 1))
+                        return -EINVAL;
+                for (i = 0; i < n; i++)
+                        *(char *)(ubuf + off + i) = child->d_name[i];
+                *(char *)(ubuf + off + n) = '\n';
+                off += n + 1;
+        }
+
+        return (int)off;
 }
 
 static int sys_exit_fn(struct pt_regs *r)
@@ -380,25 +558,29 @@ static int sys_sandbox_query_fn(struct pt_regs *r)
 }
 
 static const syscall_fn syscall_table[] = {
-        [SYS_WRITE]           = sys_write_fn,
-        [SYS_EXIT]            = sys_exit_fn,
-        [SYS_GETCHAR]         = sys_getchar_fn,
-        [SYS_PUTCHAR]         = sys_putchar_fn,
-        [SYS_CLEAR]           = sys_clear_fn,
-        [SYS_REBOOT]          = sys_reboot_fn,
-        [SYS_POWEROFF]        = sys_poweroff_fn,
-        [SYS_TIER_QUERY]      = sys_tier_query_fn,
-        [SYS_TIER_REQUEST]    = sys_tier_request_fn,
-        [SYS_FORK]            = sys_fork_fn,
-        [SYS_EXEC]            = sys_exec_fn,
-        [SYS_WAIT]            = sys_wait_fn,
-        [SYS_FORK_WITH_SANDBOX] = sys_fork_with_sandbox_fn,
-        [SYS_MLFQ_QUERY]      = sys_mlfq_query_fn,
-        [SYS_YIELD]           = sys_yield_fn,
-        [SYS_KILL]            = sys_kill_fn,
-        [SYS_SET_TIER]        = sys_set_tier_fn,
-        [SYS_UNAME]           = sys_uname_fn,
-        [SYS_SANDBOX_QUERY]   = sys_sandbox_query_fn,
+    [SYS_WRITE] = sys_write_fn,
+    [SYS_OPEN] = sys_open_fn,
+    [SYS_EXIT] = sys_exit_fn,
+    [SYS_GETCHAR] = sys_getchar_fn,
+    [SYS_PUTCHAR] = sys_putchar_fn,
+    [SYS_CLEAR] = sys_clear_fn,
+    [SYS_REBOOT] = sys_reboot_fn,
+    [SYS_POWEROFF] = sys_poweroff_fn,
+    [SYS_TIER_QUERY] = sys_tier_query_fn,
+    [SYS_TIER_REQUEST] = sys_tier_request_fn,
+    [SYS_FORK] = sys_fork_fn,
+    [SYS_EXEC] = sys_exec_fn,
+    [SYS_WAIT] = sys_wait_fn,
+    [SYS_FORK_WITH_SANDBOX] = sys_fork_with_sandbox_fn,
+    [SYS_MLFQ_QUERY] = sys_mlfq_query_fn,
+    [SYS_YIELD] = sys_yield_fn,
+    [SYS_READ] = sys_read_fn,
+    [SYS_CLOSE] = sys_close_fn,
+    [SYS_KILL] = sys_kill_fn,
+    [SYS_SET_TIER] = sys_set_tier_fn,
+    [SYS_UNAME] = sys_uname_fn,
+    [SYS_LS] = sys_ls_fn,
+    [SYS_SANDBOX_QUERY] = sys_sandbox_query_fn,
 };
 
 #define NUM_SYSCALLS (sizeof(syscall_table) / sizeof(syscall_table[0]))

@@ -11,6 +11,9 @@ big.txt
 test.txt
 hello.txt
 tools/make_initrd
+src/user/uname
+rust/uname/target/
+src/user/rust/uname/target/
 
 # 调试残留
 qemu.log

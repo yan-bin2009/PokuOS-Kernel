@@ -18,7 +18,7 @@ struct vm_page vm_page_array[NUM_PAGES];
 static TAILQ_HEAD(free_page_list, vm_page) vm_page_freeq;
 uint32_t page_directory[1024] __attribute__((aligned(PAGE_SIZE)));
 static uint32_t page_table_0[1024] __attribute__((aligned(PAGE_SIZE)));
-static uint32_t page_table_physmap[4][1024] __attribute__((aligned(PAGE_SIZE)));
+static uint32_t page_table_physmap[16][1024] __attribute__((aligned(PAGE_SIZE)));
 
 #define PHYS_MAP_BASE 0xC0000000
 
@@ -54,7 +54,7 @@ uint32_t free_pages_count(void)
         uint32_t count = 0;
 
         TAILQ_FOREACH(pg, &vm_page_freeq, pageq)
-                count++;
+        count++;
         return count;
 }
 
@@ -173,6 +173,21 @@ void map_page(void *virt, void *phys, uint32_t flags)
         __asm__ volatile("invlpg (%0)" : : "r"(virt) : "memory");
 }
 
+int page_present(void *virt)
+{
+        uint32_t vaddr = (uint32_t)virt;
+        uint32_t pd_idx = vaddr >> 22;
+        uint32_t pt_idx = (vaddr >> 12) & 0x3FF;
+        uint32_t *pd = (uint32_t *)0xFFFFF000;
+        uint32_t *pt;
+
+        if (!(pd[pd_idx] & PTE_PRESENT))
+                return 0;
+
+        pt = (uint32_t *)(0xFFC00000 + (pd_idx << 12));
+        return (pt[pt_idx] & PTE_PRESENT) ? 1 : 0;
+}
+
 void unmap_page(void *virt)
 {
         uint32_t vaddr = (uint32_t)virt;
@@ -216,7 +231,7 @@ unsigned long paging_init(unsigned long mem_start, unsigned long mem_end)
         page_directory[0] = ((uint32_t)page_table_0) | PTE_PRESENT | PTE_RW;
         page_directory[1023] = ((uint32_t)page_directory) | PTE_PRESENT | PTE_RW;
 
-        for (i = 0; i < 4; i++)
+        for (i = 0; i < 16; i++)
         {
                 uint32_t j;
 

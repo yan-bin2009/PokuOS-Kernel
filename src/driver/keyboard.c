@@ -3,7 +3,7 @@
  * 参考linux-0.99键盘工艺，感谢linus的馈赠！！！
  */
 
-#include <driver/keybord.h>
+#include <driver/keyboard.h>
 #include <kernel/ports.h>
 
 #define BUFFER_SIZE 256
@@ -19,6 +19,7 @@ static unsigned long key_down[4] = {0, 0, 0, 0};
 static int k_down[NR_SHIFT] = {0, 0};
 static int shift_state = 0;
 static int caps_lock = 0;
+static int num_lock = 0;
 static int rep = 0;
 static unsigned char prev_scancode = 0;
 
@@ -102,8 +103,14 @@ static void push_arrow(int scancode)
 {
         switch (scancode)
         {
+        case 0x47:
+                push_to_buffer(KEY_HOME);
+                break;
         case 0x48:
                 push_to_buffer(KEY_UP);
+                break;
+        case 0x49:
+                push_to_buffer(KEY_PGUP);
                 break;
         case 0x4B:
                 push_to_buffer(KEY_LEFT);
@@ -111,15 +118,57 @@ static void push_arrow(int scancode)
         case 0x4D:
                 push_to_buffer(KEY_RIGHT);
                 break;
+        case 0x4F:
+                push_to_buffer(KEY_END);
+                break;
         case 0x50:
                 push_to_buffer(KEY_DOWN);
+                break;
+        case 0x51:
+                push_to_buffer(KEY_PGDN);
+                break;
+        case 0x52:
+                push_to_buffer(KEY_INS);
+                break;
+        case 0x53:
+                push_to_buffer(KEY_DEL);
                 break;
         default:
                 break;
         }
 }
 
-void keybord_handler(void *frame)
+/* 小键盘（NumLock 关闭时为导航键，开启时输入数字/符号） */
+static void handle_keypad(int scancode)
+{
+        static const char kp_num[] = {'7', '8', '9', '-', '4', '5',
+                                      '6', '+', '1', '2', '3', '0', '.'};
+
+        if (scancode == 0x4A)
+        {
+                push_to_buffer('-');
+                return;
+        }
+        if (scancode == 0x4E)
+        {
+                push_to_buffer('+');
+                return;
+        }
+        if (scancode == 0x37)
+        {
+                push_to_buffer('*');
+                return;
+        }
+        if (scancode >= 0x47 && scancode <= 0x53)
+        {
+                if (num_lock & 1)
+                        push_to_buffer(kp_num[scancode - 0x47]);
+                else
+                        push_arrow(scancode);
+        }
+}
+
+void keyboard_handler(void *frame)
 {
         unsigned char scancode = inb(0x60);
         int up_flag;
@@ -143,7 +192,20 @@ void keybord_handler(void *frame)
                         return;
                 }
                 if (!up_flag)
-                        push_arrow(scancode);
+                {
+                        switch (scancode)
+                        {
+                        case 0x1C: /* 小键盘 Enter */
+                                push_to_buffer('\n');
+                                break;
+                        case 0x35: /* 小键盘 / */
+                                push_to_buffer('/');
+                                break;
+                        default:
+                                push_arrow(scancode);
+                                break;
+                        }
+                }
                 outb(0x20, 0x20);
                 return;
         }
@@ -170,14 +232,25 @@ void keybord_handler(void *frame)
 
         if (scancode == 0x3A)
         {
-                caps_toggle();
+                if (!rep)
+                        caps_toggle();
                 outb(0x20, 0x20);
                 return;
         }
 
-        if (scancode == 0x48 || scancode == 0x4B || scancode == 0x4D || scancode == 0x50)
+        if (scancode == 0x45)
         {
-                push_arrow(scancode);
+                if (!rep)
+                        num_lock = !num_lock;
+                outb(0x20, 0x20);
+                return;
+        }
+
+        /* 小键盘区：NumLock 决定数字或导航 */
+        if (scancode == 0x37 || scancode == 0x4A ||
+            (scancode >= 0x47 && scancode <= 0x53))
+        {
+                handle_keypad(scancode);
                 outb(0x20, 0x20);
                 return;
         }
@@ -198,6 +271,26 @@ void keybord_handler(void *frame)
                                 c = ')';
                         else if (c == '-')
                                 c = '_';
+                        else if (c == '=')
+                                c = '+';
+                        else if (c == '[')
+                                c = '{';
+                        else if (c == ']')
+                                c = '}';
+                        else if (c == ';')
+                                c = ':';
+                        else if (c == '\'')
+                                c = '"';
+                        else if (c == '`')
+                                c = '~';
+                        else if (c == '\\')
+                                c = '|';
+                        else if (c == ',')
+                                c = '<';
+                        else if (c == '.')
+                                c = '>';
+                        else if (c == '/')
+                                c = '?';
                 }
                 push_to_buffer(c);
         }
@@ -205,7 +298,7 @@ void keybord_handler(void *frame)
         outb(0x20, 0x20);
 }
 
-void keybord_init(void)
+void keyboard_init(void)
 {
         outb(0x20, 0x11);
         outb(0xA0, 0x11);

@@ -117,12 +117,14 @@ void mutex_lock(struct mutex *m)
                         serial_write("\n");
                 }
 
-                /* 插入等待队列（复用 task->next，因处于 WAITING 不在就绪队） */
+                /* 插入等待队列（复用 task->next，因处于 WAITING 不在就绪队）
+                 * 必须先出就绪队，否则 next 复用会破坏就绪链表 */
+                dequeue_task(me);
                 me->state = TASK_WAITING;
                 me->next = m->waitq;
                 m->waitq = me;
                 sti_restore();
-                schedule();       /* 放弃 CPU，调度器在 sti后运行 */
+                schedule(); /* 放弃 CPU，调度器在 sti后运行 */
                 cli_save();
         }
 }

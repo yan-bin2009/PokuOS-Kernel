@@ -8,26 +8,15 @@
 
 ## 功能特性
 
-- GRUB（Multiboot1 标准）引导
-- 分页内存管理（4KB 页表、递归映射、用户/内核隔离）
-- 写时复制（COW）
-- 内核堆分配器（边界标签、前后合并）
+- GRUB（Multiboot1）引导，QEMU 可直接运行
+- 分页内存管理 + 写时复制（COW）+ 虚拟内存层（vm_object/vm_map/内存压力联动）
+- 内核堆分配器（边界标签、前后合并、可动态扩展）
 - 抢占式调度（PIT 时钟中断 + 5 级 MLFQ 队列）
-- 虚拟文件系统（VFS）
-- 初始内存文件系统（initrd，ramfs）
-- TARFS 文件系统（从块设备读取 tar 镜像）
-- 页缓存（64 槽 + 预读）
+- 虚拟文件系统（VFS）+ RAMFS（initrd）+ TARFS + 页缓存
 - ELF 用户程序加载与用户态/内核态切换（TSS + iret）
-- 四级 Tier 权限系统（Kernel/System/User/Critical）
-- Capability 能力模型（15 种权限位掩码）
-- 沙盒 fork（caps/mem_limit/cpu_quota/root_path/tier_override）
-- 看门狗（崩溃自动重启 + 指数退避）
-- 虚拟内存层（vm_object/vm_map/COW/内存压力联动）
-- VGA 文本模式（80×25）+ PS/2 键盘
-- 异常处理框架（完整寄存器转储、错误码解码、栈回溯）
-- `int 0x80` 系统调用（含用户指针合法性校验）
-- 用户态 Shell（命令历史、motd 登录横幅）
-- ACPI 电源管理（`poweroff` 关机）
+- 安全模型：四级 Tier 权限 + Capability 能力模型 + 沙盒 fork
+- 看门狗（崩溃自动重启）、异常处理框架（寄存器转储、栈回溯）
+- `int 0x80` 系统调用、用户态 Shell（命令历史）、ACPI 电源管理
 
 ## 环境要求
 
@@ -131,5 +120,3 @@ PokuOS-Kernel/
 ## 许可证
 
 GNU Lesser General Public License v2.1
-
-###### 以及....新的README好看吗

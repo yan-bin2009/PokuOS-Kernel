@@ -13,14 +13,13 @@ void _exit(int code)
 __attribute__((naked, noreturn)) void _start(void)
 {
         __asm__ volatile(
-                "mov 0(%%esp), %%eax\n\t"
-                "lea 4(%%esp), %%ebx\n\t"
-                "push %%ebx\n\t"
-                "push %%eax\n\t"
-                "call main\n\t"
-                "add $8, %%esp\n\t"
-                "push %%eax\n\t"
-                "call _exit\n\t"
-                "hlt"
-                ::: "eax", "ebx", "memory");
+            "mov 0(%%esp), %%eax\n\t"
+            "lea 4(%%esp), %%ebx\n\t"
+            "push %%ebx\n\t"
+            "push %%eax\n\t"
+            "call main\n\t"
+            "add $8, %%esp\n\t"
+            "push %%eax\n\t"
+            "call _exit\n\t"
+            "hlt" ::: "eax", "ebx", "memory");
 }

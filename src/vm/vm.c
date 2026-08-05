@@ -193,8 +193,10 @@ void vm_protect_readonly(struct vm_map *map)
                         if (!(pt[j] & 1) || !(pt[j] & PTE_USER))
                                 continue;
                         pt[j] &= ~PTE_RW;
+                        /* 唯一引用：置只读用于写时恢复可写，ref 保持 1
+                         * 使进程退出时物理帧能正常回收 */
                         phys = pt[j] & 0xFFFFF000;
-                        vm_page_array[phys >> 12].ref_count = 2;
+                        vm_page_array[phys >> 12].ref_count = 1;
                         __asm__ volatile("invlpg (%0)" : : "r"((uint32_t)(i << 22 | j << 12)) : "memory");
                 }
         }

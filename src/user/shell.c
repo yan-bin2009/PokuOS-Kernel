@@ -1,6 +1,6 @@
 #include "lib/errno.h"
 #include "lib/syscall.h"
-#include <driver/keybord.h>
+#include <driver/keyboard.h>
 
 #define CMD_MAX 64
 #define HIST_MAX 16
@@ -66,6 +66,195 @@ static int split(char *cmd, char *argv[], int max)
         return n;
 }
 
+/* ---- Tab 补全 ---- */
+
+#define CAND_MAX 24
+#define CAND_LEN 48
+
+static const char *builtin_cmds[] = {
+    "help",
+    "clear",
+    "ls",
+    "reboot",
+    "poweroff",
+    "tier",
+    "exit",
+    "wait",
+    "run",
+    0,
+};
+
+static int strncmp(const char *a, const char *b, int n)
+{
+        while (n > 0 && *a && *b && *a == *b)
+        {
+                a++;
+                b++;
+                n--;
+        }
+        if (n == 0)
+                return 0;
+        return *a - *b;
+}
+
+static void strcpy(char *d, const char *s)
+{
+        while ((*d++ = *s++) != '\0')
+                ;
+}
+
+/* 从 sys_ls 输出中收集以 base 开头的名字到 cands[start..]，返回总数 */
+static int collect_ls_prefix(const char *path, const char *base, int blen,
+                             char cands[][CAND_LEN], int start, int max)
+{
+        char buf[512];
+        int n;
+        int cnt = start;
+        int i = 0;
+
+        n = sys_ls(path, buf, sizeof(buf) - 1);
+        if (n < 0)
+                return start;
+        buf[n] = '\0';
+        while (i < n && cnt < max)
+        {
+                char tmp[CAND_LEN];
+                int t = 0;
+
+                while (i < n && buf[i] != '\n' && t < CAND_LEN - 1)
+                        tmp[t++] = buf[i++];
+                if (i < n && buf[i] == '\n')
+                        i++;
+                tmp[t] = '\0';
+                if (t >= blen && strncmp(tmp, base, blen) == 0)
+                {
+                        strcpy(cands[cnt], tmp);
+                        cnt++;
+                }
+        }
+        return cnt;
+}
+
+/* 返回补全后的新长度；候选/重绘直接输出到控制台 */
+static int tab_complete(char *cmd, int len, int cap)
+{
+        char cands[CAND_MAX][CAND_LEN];
+        char pre[CAND_LEN];
+        int ws = len;
+        int base_off;
+        int base_len;
+        int first;
+        int cnt = 0;
+        int i, j, k;
+        int common;
+
+        while (ws > 0 && cmd[ws - 1] != ' ')
+                ws--;
+        base_off = ws;
+        base_len = len - ws;
+        first = (ws == 0);
+
+        if (base_len >= CAND_LEN)
+                return len;
+        for (i = 0; i < base_len; i++)
+                pre[i] = cmd[base_off + i];
+        pre[base_len] = '\0';
+
+        if (first)
+        {
+                for (i = 0; builtin_cmds[i]; i++)
+                        if (strncmp(builtin_cmds[i], pre, base_len) == 0)
+                        {
+                                strcpy(cands[cnt], builtin_cmds[i]);
+                                cnt++;
+                        }
+                cnt = collect_ls_prefix("/mnt", pre, base_len, cands, cnt, CAND_MAX);
+        }
+        else if (pre[0] == '/')
+        {
+                const char *dirs[] = {"/mnt", "/home", 0};
+
+                for (i = 0; dirs[i]; i++)
+                {
+                        int dl = strlen(dirs[i]);
+                        int before;
+
+                        if (base_len > dl && strncmp(pre, dirs[i], dl) == 0 &&
+                            pre[dl] == '/')
+                        {
+                                const char *base = pre + dl + 1;
+                                int blen = base_len - dl - 1;
+
+                                before = cnt;
+                                cnt = collect_ls_prefix(dirs[i], base, blen,
+                                                        cands, cnt, CAND_MAX);
+                                for (k = before; k < cnt; k++)
+                                {
+                                        char full[CAND_LEN];
+                                        int fl = 0;
+                                        int m;
+
+                                        for (m = 0; dirs[i][m] && fl < CAND_LEN - 1; m++)
+                                                full[fl++] = dirs[i][m];
+                                        full[fl++] = '/';
+                                        for (m = 0; cands[k][m] && fl < CAND_LEN - 1; m++)
+                                                full[fl++] = cands[k][m];
+                                        full[fl] = '\0';
+                                        strcpy(cands[k], full);
+                                }
+                                break;
+                        }
+                }
+        }
+
+        if (cnt == 0)
+                return len;
+
+        if (cnt == 1)
+        {
+                for (j = base_len; cands[0][j] && len < cap - 1; j++)
+                {
+                        cmd[len++] = cands[0][j];
+                        sys_putchar(cands[0][j]);
+                }
+                cmd[len] = '\0';
+                return len;
+        }
+
+        /* 多个候选：先补公共前缀；补不动则换行列候选 */
+        common = base_len;
+        while (cands[0][common])
+        {
+                for (k = 1; k < cnt; k++)
+                        if (cands[k][common] != cands[0][common])
+                                break;
+                if (k < cnt)
+                        break;
+                common++;
+        }
+        if (common > base_len)
+        {
+                for (j = base_len; j < common && len < cap - 1; j++)
+                {
+                        cmd[len++] = cands[0][j];
+                        sys_putchar(cands[0][j]);
+                }
+                cmd[len] = '\0';
+                return len;
+        }
+
+        sys_write("\n");
+        for (k = 0; k < cnt; k++)
+        {
+                sys_write(cands[k]);
+                sys_putchar(' ');
+        }
+        sys_write("\n> ");
+        for (j = 0; j < len; j++)
+                sys_putchar(cmd[j]);
+        return len;
+}
+
 int main(int argc, char *argv[])
 {
         static char history[HIST_MAX][CMD_MAX];
@@ -127,6 +316,16 @@ int main(int argc, char *argv[])
                                 continue;
                         }
 
+                        if (c == '\t')
+                        {
+                                len = tab_complete(cmd, len, CMD_MAX);
+                                continue;
+                        }
+
+                        if (c == KEY_HOME || c == KEY_END || c == KEY_PGUP ||
+                            c == KEY_PGDN || c == KEY_INS || c == KEY_DEL)
+                                continue;
+
                         if (len < CMD_MAX - 1)
                         {
                                 cmd[len++] = c;
@@ -177,7 +376,81 @@ int main(int argc, char *argv[])
                         }
                         else if (strcmp(argv[0], "help") == 0)
                         {
-                                sys_write("commands: help clear reboot uname poweroff tier exit wait run\n");
+                                sys_write("commands: help clear ls reboot poweroff tier exit wait run\n");
+                        }
+                        else if (strcmp(argv[0], "ls") == 0)
+                        {
+                                char lsbuf[512];
+                                char lspath[CMD_MAX + 16];
+                                int r;
+                                int i;
+
+                                if (n > 1)
+                                {
+                                        if (argv[1][0] == '/')
+                                        {
+                                                for (i = 0; argv[1][i] && i < CMD_MAX + 15; i++)
+                                                        lspath[i] = argv[1][i];
+                                        }
+                                        else
+                                        {
+                                                for (i = 0; "/mnt/"[i]; i++)
+                                                        lspath[i] = "/mnt/"[i];
+                                                for (; i < CMD_MAX + 15 && argv[1][i - 5]; i++)
+                                                        lspath[i] = argv[1][i - 5];
+                                        }
+                                        lspath[i] = '\0';
+
+                                        r = sys_ls(lspath, lsbuf, sizeof(lsbuf) - 1);
+                                        if (r < 0)
+                                        {
+                                                sys_write("error: cannot list ");
+                                                sys_write(lspath);
+                                                sys_write("\n");
+                                        }
+                                        else if (r == 0)
+                                        {
+                                                sys_write("(empty)\n");
+                                        }
+                                        else
+                                        {
+                                                lsbuf[r] = '\0';
+                                                sys_write(lsbuf);
+                                        }
+                                }
+                                else
+                                {
+                                        sys_write("/home:\n");
+                                        r = sys_ls("/home", lsbuf, sizeof(lsbuf) - 1);
+                                        if (r < 0)
+                                        {
+                                                sys_write("error: cannot list /home\n");
+                                        }
+                                        else if (r == 0)
+                                        {
+                                                sys_write("(empty)\n");
+                                        }
+                                        else
+                                        {
+                                                lsbuf[r] = '\0';
+                                                sys_write(lsbuf);
+                                        }
+                                        sys_write("/mnt:\n");
+                                        r = sys_ls("/mnt", lsbuf, sizeof(lsbuf) - 1);
+                                        if (r < 0)
+                                        {
+                                                sys_write("error: cannot list /mnt\n");
+                                        }
+                                        else if (r == 0)
+                                        {
+                                                sys_write("(empty)\n");
+                                        }
+                                        else
+                                        {
+                                                lsbuf[r] = '\0';
+                                                sys_write(lsbuf);
+                                        }
+                                }
                         }
                         else if (strcmp(argv[0], "clear") == 0)
                         {
@@ -192,10 +465,6 @@ int main(int argc, char *argv[])
                         {
                                 sys_write("Powering off...\n");
                                 sys_poweroff();
-                        }
-                        else if (strcmp(argv[0], "uname") == 0)
-                        {
-                                sys_write("PokuOS\n");
                         }
                         else if (strcmp(argv[0], "tier") == 0)
                         {
@@ -266,6 +535,29 @@ int main(int argc, char *argv[])
                                         }
 
                                         r = sys_exec(path, argv);
+                                        if (r != 0)
+                                        {
+                                                /* 无后缀命令：自动补 .elf 再试一次 */
+                                                int plen = 0;
+                                                int has_elf;
+
+                                                while (path[plen])
+                                                        plen++;
+                                                has_elf = (plen >= 4 &&
+                                                           path[plen - 4] == '.' &&
+                                                           path[plen - 3] == 'e' &&
+                                                           path[plen - 2] == 'l' &&
+                                                           path[plen - 1] == 'f');
+                                                if (!has_elf && plen < CMD_MAX + 11)
+                                                {
+                                                        path[plen] = '.';
+                                                        path[plen + 1] = 'e';
+                                                        path[plen + 2] = 'l';
+                                                        path[plen + 3] = 'f';
+                                                        path[plen + 4] = '\0';
+                                                        r = sys_exec(path, argv);
+                                                }
+                                        }
                                         if (r != 0)
                                         {
                                                 switch (r)

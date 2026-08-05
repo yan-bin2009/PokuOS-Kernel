@@ -37,7 +37,6 @@ int elf_load(void *data, uint32_t *entry, const char *path)
         Elf32_Ehdr *ehdr;
         Elf32_Phdr *phdr;
         int i;
-        uint32_t offset;
 
         if (!data || !entry)
                 return -1;
@@ -83,19 +82,28 @@ int elf_load(void *data, uint32_t *entry, const char *path)
         for (i = 0; i < ehdr->e_phnum; i++)
         {
                 uint32_t paddr;
+                uint32_t va_start;
+                uint32_t va_end;
+                uint32_t va;
 
                 if (phdr[i].p_type != PT_LOAD)
                         continue;
 
-                for (offset = 0; offset < phdr[i].p_memsz; offset += PAGE_SIZE)
+                va_start = phdr[i].p_vaddr & ~(PAGE_SIZE - 1);
+                va_end = phdr[i].p_vaddr + phdr[i].p_memsz;
+
+                for (va = va_start; va < va_end; va += PAGE_SIZE)
                 {
+                        if (page_present((void *)va))
+                                continue;
+
                         paddr = alloc_page_frame();
                         if (!paddr)
                         {
                                 serial_write("[ELF] Out of memory\n");
                                 return -1;
                         }
-                        map_page((void *)(phdr[i].p_vaddr + offset),
+                        map_page((void *)va,
                                  (void *)paddr,
                                  PTE_PRESENT | PTE_RW | PTE_USER);
                 }

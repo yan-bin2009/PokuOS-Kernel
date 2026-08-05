@@ -251,6 +251,96 @@ ssize_t vfs_read(struct file *filp, char *buf, size_t len)
         return filp->f_op->read(filp, buf, len, &filp->f_pos);
 }
 
+struct file *vfs_create(const char *path, uint32_t mode)
+{
+        struct super_block *sb;
+        struct dentry *base;
+        struct dentry *dir;
+        struct dentry *dentry;
+        struct file *filp;
+        const char *rest;
+        char *copy;
+        char *slash;
+        char *base_name;
+        size_t len;
+
+        if (!path || !*path || !vfs_root)
+                return NULL;
+
+        sb = vfs_find_mount(path, &rest);
+        base = (sb && sb->s_root) ? sb->s_root : vfs_root;
+
+        len = strlen(rest) + 1;
+        copy = (char *)kmalloc(len);
+        if (!copy)
+                return NULL;
+        strcpy(copy, rest);
+
+        slash = copy;
+        base_name = copy;
+        while (*slash)
+        {
+                if (*slash == '/')
+                        base_name = slash + 1;
+                slash++;
+        }
+        if (base_name > copy)
+                base_name[-1] = '\0';
+
+        if (*base_name == '\0')
+        {
+                kfree(copy);
+                return NULL;
+        }
+
+        if (*copy == '\0')
+                dir = base;
+        else
+        {
+                dir = vfs_lookup_from(base, copy);
+                if (!dir)
+                {
+                        kfree(copy);
+                        return NULL;
+                }
+        }
+
+        if (vfs_lookup_component(dir, base_name))
+        {
+                kfree(copy);
+                return NULL;
+        }
+
+        dentry = vfs_new_dentry(base_name, NULL, dir);
+        kfree(copy);
+        if (!dentry)
+                return NULL;
+
+        if (!dir->d_inode->i_op || !dir->d_inode->i_op->create ||
+            dir->d_inode->i_op->create(dir->d_inode, dentry, mode) != 0)
+        {
+                vfs_free_dentry(dentry);
+                return NULL;
+        }
+
+        filp = (struct file *)kmalloc(sizeof(struct file));
+        if (!filp)
+                return NULL;
+        memset(filp, 0, sizeof(struct file));
+        filp->f_dentry = dentry;
+        filp->f_pos = 0;
+        filp->f_op = dentry->d_inode->i_fop;
+        if (filp->f_op && filp->f_op->open)
+        {
+                if (filp->f_op->open(dentry->d_inode, filp) != 0)
+                {
+                        kfree(filp);
+                        return NULL;
+                }
+        }
+        return filp;
+}
+
 ssize_t vfs_write(struct file *filp, const char *buf, size_t len)
 {
         if (!filp || !filp->f_op || !filp->f_op->write)

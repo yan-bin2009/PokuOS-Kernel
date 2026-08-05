@@ -1,4 +1,5 @@
 #include <driver/vga.h>
+#include <fs/vfs.h>
 #include <kernel/kstring.h>
 #include <kernel/paging.h>
 #include <kernel/process.h>
@@ -495,6 +496,16 @@ void task_exit(int code)
         dequeue_task(t);
         t->state = TASK_EXITED;
         t->exit_code = code;
+
+        /* 关闭本任务打开的文件 */
+        for (i = 3; i < FD_MAX; i++)
+        {
+                if (t->fd_table[i])
+                {
+                        vfs_close(t->fd_table[i]);
+                        t->fd_table[i] = NULL;
+                }
+        }
 
         p = t->parent;
         if (p && p->state == TASK_WAITING)

@@ -25,7 +25,7 @@ struct idt_ptr
 struct idt_entry idt[256] __attribute__((section(".data")));
 struct idt_ptr idtp;
 
-extern void keybord_entry(void);
+extern void keyboard_entry(void);
 extern void pit_entry(void);
 extern void syscall_entry(void);
 
@@ -97,7 +97,7 @@ void idt_init(void)
         idt_set_gate(14, (unsigned long)page_fault_handler,
                      0x08, GATE_INTERRUPT);
 
-        idt_set_gate(IRQ1_VECTOR, (unsigned long)keybord_entry,
+        idt_set_gate(IRQ1_VECTOR, (unsigned long)keyboard_entry,
                      0x08, GATE_INTERRUPT);
         idt_set_gate(32, (unsigned long)pit_entry,
                      0x08, GATE_INTERRUPT);

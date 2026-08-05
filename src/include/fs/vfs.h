@@ -95,6 +95,7 @@ extern struct dentry *vfs_root;
 int vfs_mount_root(struct inode *root_inode);
 struct dentry *vfs_lookup(const char *path);
 struct file *vfs_open(const char *path, uint32_t flags);
+struct file *vfs_create(const char *path, uint32_t mode);
 ssize_t vfs_read(struct file *filp, char *buf, size_t len);
 ssize_t vfs_write(struct file *filp, const char *buf, size_t len);
 int vfs_close(struct file *filp);
